@@ -25,6 +25,41 @@ output:
 
 ## Configuración general
 
+_Este documento se generó a partir de un archivo .Rmd (R markdown) en el que se intercala texto y chunks de código._ 
+
+_Cada fracción de código se delimita con 3 apóstrofes al comienzo y al final (```)._
+
+_A su vez, en el comienzo del código se debe agregar, entre llaves, una **r** y el nombre del chunk._
+
+_Para generar un archivo .html (u otros) con Knit, es necesario que cada fragmento de código tenga su nombre único._
+
+Ejemplo:
+
+    \``` {r nombre_chunk_1}
+    
+                código R bla bla...
+    
+     \```
+
+_Por último, dentro de las llaves se pueden agregar ciertos parámetros que indican cierta configuración de ese chunk._
+
+
+Ejemplo:
+
+{r nombre_chunk1, parámetro1 = ... , parámetro2 = ...}
+        
+**Opciones de parámetros**
+        
+echo = TRUE (default) --> muestra el código en el documento
+
+error, eval, include, message, warning, results, fig.align, entre otros... 
+--> mirar https://rstudio.github.io/cheatsheets/html/rmarkdown.html (otros parámetros)
+
+
+<br>
+
+_Dentro del chunk de código se puede agregar texto. El mismo tiene que estar precedido por #_
+
 ```{r configuracion_gral}
 # indica desde dónde instalar paquetes
 options(repos = c(CRAN = "http://cran.rstudio.com")) 
@@ -43,6 +78,8 @@ getwd()
 
 ## Tipos de datos
 
+_A continuación se muestran los tipos de datos con los que pueden encontrarse al trabajar en Ciencia de Datos, y cómo se interpretan en R._
+
 <br>
 
 ![Tipos de datos](/Users/FR/Documents/tipos_datos.png)
@@ -52,6 +89,8 @@ getwd()
 ## Operaciones
 
 * **Operaciones matemáticas básicas**
+
+_Ciertos datos pueden ser sujetos a operaciones matemáticas / lógicas como los que se muestran a continuación:_
 
 <br>
 
@@ -64,6 +103,9 @@ getwd()
 
 ![Operaciones lógicas](/Users/FR/Documents/op_logicas.png){height=400px width=300px}
 <br>
+
+_Pongamos ahora a prueba alguna de estas operaciones... En el próximo chunk se realiza, un renglón a la vez, alguna operación matemática en particular._
+_El output de este chunk serán cada uno de los resultados al aplicar estas operaciones._
 
 ```{r operaciones 1}
 #Operaciones básicas
@@ -89,12 +131,20 @@ abs(-8) # devuelve el valor absoluto
 
 ### **Variables**
 
+_Una variable sería algo así como una caja etiquetada en la memoria de la computadora donde se pueden guardar diferentes tipos de información (números, texto, valores booleanos, etc., mencionados anteriormente) y luego referenciar utilizando su nombre._
+
+_En R, la asignación de variables puede realizarse con el símbolo **=** o con **<-**._
+
+_En el próximo chunk se definen algunas variables._
+
+_Las variables pueden ser valores únicos, vectores (por ejemplo un vector de 3 elementos x, y, z), matrices de números, etc... Un vector en R se define como c(x, y, z), por ej._
+
 ```{r asignación_variables}
 
 n = 3 # <- puede no ser global (dentro de una fc, por ejemplo)
 n <- 3 # <- asignación global
 
-vec<-c(1,2,3)
+vec<-c(1,2,3) # Esta opción y la siguiente son equivalentes.
 c(1,2,3)->vec
 vec
 
@@ -112,10 +162,10 @@ w
 q<-rep(c(1,3,7),2) # repite la concatenación dos veces
 q
 
-m <- c(T,F,F,T) # concatena valores lógicos
+m <- c(T,F,F,T) # vector que concatena valores lógicos
 m
 
-l<-w>2 # asigna una proposición a la variable l
+l<-w>2 # asigna una proposición a la variable l (w mayor que 2)
 w
 l # asigna valor de verdad de la proposición 
 p<-c(T,F,T,F)
@@ -144,9 +194,12 @@ w3
 
 ### **Vectores**
 
+_En el chunk anterior se asignaron vectores a ciertas variables. En los próximos se realizarán operaciones sobre ellos_
+
 ```{r vectores}
 u=c(3,8,2,7,3,2,1)
-order(u)
+sort(u) # ordena la lista
+order(u) # devuelve el índice en la lista ordenada
 u==3  # operación lógica que busca las posiciones de u que guardan el 3
 u[u==3]<-4 # en esas posiciones asigna un 4   
 u
@@ -203,6 +256,25 @@ v1%*%v2    # producto escalar de dos vectores
 
 ```
 
+**En la siguiente porción de código vamos a ver el uso de ciertas herramientas y funciones.**
+
+_Las operaciones que implican **if** (condicionales) y **for** (bucles) son fundamentales en la programación y se utilizan para controlar el flujo de ejecución de un programa. Aunque no son operaciones en el sentido tradicional de operaciones aritméticas o de manipulación de datos, desempeñan un papel crucial en la lógica y el control del programa._
+
+_La estructura **if** permite que el programa tome decisiones basadas en condiciones lógicas._
+
+Ejemplo: Si se cumple la condición A, imprimi "cumplí", sino imprimí "seguí participando"...
+
+_Los bucles **for** son estructuras de control que permiten repetir un bloque de código un número específico de veces. Se utilizan cuando se necesita realizar una tarea varias veces, por ejemplo, para recorrer elementos de una lista, realizar cálculos iterativos, o realizar una operación en un rango de valores. Los bucles **for** típicamente tienen una variable de iteración que va tomando diferentes valores en cada iteración._
+
+Por ejemplo: Por cada elemento en la lista [1,2,3], sumá 2 veces su valor --> output: [3,6,9]
+
+_Una **función** es una herramienta en programación que agrupa un conjunto de acciones o pasos para realizar una tarea específica. Recibe parámetros, realiza dichos pasos y devuelve un resultado en particular._
+
+_Ejemplo sencillo: se quiere sumar 2+3, luego 3+7 y finalmente 10+24. Si uno tipea cada par de números,  tendrá un output de **5**, **10**, o el resultado que corresponda... Si ahora se quisiese generalizar la operación de suma de 2 valores, uno podría generar una función que reciba 2 parámetros y que devuelva la suma de los mismos, de manera más general. Esto evitaría tener que repetir 3 veces la operación, y se reemplazaría con la invocación de la misma función 3 veces, c/u con un par de valores distintos._
+
+_Obviamente este ejemplo de función es súper sencillo, pero imaginense ahora que la función realiza 10 pasos! Tener una función hace que el código sea más organizado, legible y fácil de mantener (además de ahorrarnos repetir el código tantas veces como querramos que ocurran esos 10 pasos!)._
+
+
 
 ```{r funciones 1}
 
@@ -234,7 +306,12 @@ Promedio(c(1,-4,5,0,10))
 
 <br>
 
+
 ### **Matrices**
+
+_Otros tipos de variables son las matrices. Una matriz es una estructura de datos compuesta por filas y columnas (en el caso de matrices bidimensionales). En ciencia de datos suelen ser el input de muchos modelos de ML._
+
+_En R se pueden generar con la función **matrix**, como la concatenación de vectores, etc. Cada elemento de la matriz tiene una posición (índice) en filas y columnas. Las filas y columnas se pueden nombrar, y se existen operaciones matemáticas específicas que se pueden realizar sobre ellas. A continuación se puede ver un resumen de asignación de matrices y operaciones matemáticas asociadas._
 
 ```{r matrices}
 ls() # lista todas las variables que se han creado en el espacio de trabajo
@@ -315,7 +392,12 @@ sample(c("cara","ceca"), 1, prob=c(0.3,0.7))# Ejemplo de moneda cargada
 
 <br>
 
+
+
 ### **Dataframes**
+
+
+_Una estructura que resulta un caballito de batalla en Cs. de Datos, son los dataframes. En R, los dataframes son estructuras de datos bidimensionales que se utilizan para almacenar conjuntos de datos tabulares, donde las filas representan observaciones y las columnas representan variables/features. Los dataframes son una de las estructuras de datos más utilizadas para manipular y analizar datos. Pueden tener información de distinto tipo (int, bool, numeric, etc), y en R se pueden generar como una concatenación de vectores con la función "data.frame"._
 
 ```{r DF}
 # Ejemplo 1
@@ -344,9 +426,13 @@ class(dfr)#devuelve la clase, es decir el tipo de objeto
 <br>
 
 ### **Listas**
+
+_Otro tipo de estructura de datos común son las listas. A continuación se muestran operaciones asociadas a las mismas._
+
+
 ```{r LISTAS}
 u=c(3,8,2,7,3,2,1)
-u[u==3]<-4 # en esas posiciones asigna un 4   
+u[u==3]<-4 # en esas posiciones asigna un 4 (cuando u ==3)
 u[which(u>=4)]<-0 # asigna 0 a esas posiciones
 u
 class(u) # para saber qué tipo de datos es
@@ -389,10 +475,16 @@ split(datosmujeres,datosmujeres$Nación) # particiona los nuevos datos por el fa
 
 <br>
 
+---
 
 <br>
 
 ### **Distribuciones**
+
+_De manera introductoria, ya mencionamos algunas de las herramientas básicas de R (cómo asignar variables, qué tipos de datos/estructuras pueden contener y cómo operar con ellas)._
+
+_Dentro del set de herramientas básicas, vamos a presentar brevemente cómo generar muestras de distribuciones conocidas (nos puede servir para generar hipótesis y contrastarlas, etc)._
+
 ```{r distribuciones}
 # Generación de muestras de distribuciones conocidas
 
@@ -414,6 +506,11 @@ muestra.chi=rchisq(70,df=4) # genera una muestra chi cuadrado con 4 grados de li
 muestra.chi # devuelve la muestra generada
 
 ```
+
+---
+
+
+_A continuación vamos a mencionar algunas de las funciones que se pueden aplicar sobre dataframes._
 
 * *EJEMPLO DE OPERACIONES SOBRE DF*
 ```{r operaciones_sobre_df}
@@ -464,6 +561,10 @@ sd(W,na.rm=T) # otra funcion que requiere excluir los valores no disponibles
 ```
 
 
+
+---
+
+_**Dejamos ejercicios resultos para quienes están interactuando con R por primera vez.**_
 
 
 <br>
@@ -742,11 +843,17 @@ sal_fin
 
 # Visualización univariada
 
+_La visualización de la información es MEGA importante para la ciencia de datos. No sólo para la comunicación de los resultados, sino para una inspección visual rápida de distribuciones, outliers, etc._
+
+_Existen varios métodos que se utilizan en R para realizar lindos gráficos, que vamos a ir viendo a medida que avance el curso de AID. Básicamente se trata de los siguientes:_
+
 (R base, lattice, ggplot, plotly)
 
 ## Carga de base de datos
 
-R disponibiliza bases de datos (airquality, iris, titanic, etc)
+_R disponibiliza bases de datos (airquality, iris, titanic, etc) que ya están integradas_
+
+_Vamos a utilizar la base de datos de airquality para empezar a graficar de a una variable a la vez._
 
 ```{r bd}
 # Cargo la base de datos
@@ -764,7 +871,10 @@ head(airquality,4) # 6 por default
 
 ## R base
 
+_En los siguientes chunks se genera código para representar distintos tipos de gráfico, en R base (lo más sencillo posible, aunque también lo más feo). En próximas clases utilizaremos ggplot, principalmente._
+
 ### Diagrama de dispersión
+
 ```{r dispersión}
 plot(airquality$Ozone) # sinónimo de plot(airquality[['Ozone']]) - 2 maneras de acceder a la columna
 plot(airquality$Ozone, type= "b")
