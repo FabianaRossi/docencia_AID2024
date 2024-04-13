@@ -1,0 +1,688 @@
+---
+title: "Clase 2 asincrónica: Análisis Multivariado"
+author: "Práctico AID 2024"
+date: "25/05/2024"
+output:
+  html_document:
+    toc: yes
+    toc_float: yes
+    df_print: paged
+---
+
+Esta notebook les presenta una serie de estrategias que pueden utilizarse para analizar datos multivariados (varias features/variables). Principalmente se utiliza la librerìa ggplot para graficar.
+
+
+## **Cargo librerías**
+```{r librerias, warning=F, message=F, warn.conflicts=FALSE}
+library(tidyverse)
+library(viridisLite)
+library(openintro)
+library(GGally)
+library(corrr)
+library(knitr)
+library(aplpack) #caras chernoff
+library(corrplot)
+library(RColorBrewer)
+library(scatterplot3d)
+library(Hmisc)
+library(knitr)
+library(ggmosaic)
+library(tidymodels)
+library(yardstick)
+library(ggpubr)
+library(fmsb)
+library(broom)
+library(robustbase)
+library(gsheet)
+library(patchwork)
+library(xlsx)
+library(readxl)
+library(ggcorrplot)
+library(scatterplot3d)
+```
+
+
+La data se carga desde un archivo guardado en un Drive de Google. En las distintas clases les vamos presentando distintas alternativas para que tengan modelos de sintaxis para recuperar información de distintas fuentes.
+
+## **Cargo datos**
+<span style="color:blue"> BD de IMC infantil </span>
+```{r data, warning=FALSE,message=F, warn.conflicts=FALSE}
+#url de la tabla IMCinfantil que se usó para la clase práctica nro 1
+url <- 'https://docs.google.com/spreadsheets/d/1tnxeu-BlbOOaiF9E7HHuuk4-hxgOLHXM' 
+
+# La tabla del url tiene "," como separadores decimales y si se abre directamente desde el url, malinterpreta los números -> solución: lo abro como texto, cambio "," a "." y luego transformo el dato al tipo numérico
+data <- read.csv(text=gsheet2text(url, format='csv'))
+# muto las variables de las columnas 4-7, y les reemplazo la coma por un punto
+data <- data %>% mutate_at(vars(colnames(data[4:7])), ~ str_replace(., ",", "."))
+# paso a formato numérico
+data[c(2,4:8)] <- sapply(data[c(2,4:8)], as.numeric)
+```
+
+## **Estilo general para los gráficos**
+
+Este paso es totalmente opcional. En este caso, se define una variable llamada **theme** en la que se definen varios parámetros de diseño/estilo de los gráficos ggplot. Esto hace que cada vez que yo grafique, pueda llamar a "theme" sin tener que escribir todo lo que está más abajo, y se respete el mismo estilo para todos los gráficos (ejemplo, título en negrita e itálica, fondo blanco, etc...)
+
+```{r theme general}
+theme <- theme(text = element_text(size=10),
+               plot.title = element_text(size = 12, face = "bold.italic", hjust = 0.5), 
+               axis.title.x = element_text(size = 10, face="bold", colour='black'),         
+               axis.title.y = element_text(size = 10, face="bold"),
+               panel.border = element_blank(),
+               panel.grid.major = element_blank(),
+               panel.grid.minor = element_blank(), 
+               legend.title = element_text(face="bold"))
+```
+
+# 1) Análisis de vectores de posición y escala
+
+En la base de datos cargada (variable **data**), yo tengo un dataframe de 150 observaciones y 9 variables. 
+
+_colnames(data)_ les dice el nombre de las mismas --> ["PACIENTE", "EDAD", "SEXO", "PESO", "TALLA", "IMC", "PIMC", "CC", "CatPeso"]
+
+De estas columnas la 3 (SEXO) y la 9 (CatPeso) son variables categóricas, por lo que no tiene sentido realizar un análisis de posición y escala para las mismas. Además la columna 1 (PACIENTE) es una columna identificatoria de la observaciòn, por lo que no tiene sentido considerarla para el análisis (es como tener el DNI... de qué me sirve tener el promedio de los DNIs? no dice nada del comportamiento del dataset!)
+
+Un análisis de posición y escala es básicamente calcular la media o mediana del dataset, así como el desvío.
+
+Cada observación (fila) tendrá un vector característico de variables numéricas:
+        
+        ej obs_1: [ valor_edad_1, valor_peso_1, valor_talla_1, valor_imc_1, ...... ]
+           obs_2: [ valor_edad_2, valor_peso_2, valor_talla_2, valor_imc_2, ...... ]
+         
+Calcular el vector de posición para el dataset **data** puede realizarse con el siguiente código:
+
+```{r vectores1}
+# me quedo sólo con las variables numéricas
+vector_medias <- apply(data[,c(2,4:8)], 2, mean) # aquí estoy aplicando la función mean a data... (considerando todas las filas pero sólo las columnas c(2,4:8) (columnas 2, 4 a 8... se excluye 1, 3 y 9 porque no son numéricas)).
+# el número 2 que se encuentra antes de "mean" indica que ese promedio se realizará sobre las columnas. Si hubiera un 1, es sobre las filas. Indicar que aplique la funciòn "mean" por columna hará que se calcule la media para todos los valores de EDAD de todas las observaciones, después lo mismo para PESO.... es decir que mi vector de medias tendrá tantos valores como columnas haya.
+
+vector_medias #(comportamiento medio)
+
+vector_sd <- apply(data[,c(2,4:8)], 2, sd)
+round(vector_sd,2) #redondeo a 2 decimales
+```
+
+
+# 2) Análisis de correlación y covarianza
+*Análisis exploratorio superficial, para analizar las categorías de cada variable*
+
+En los siguientes chunks se presenta un análisis gráfico de correlación lineal entre las variables. Hay distintos paquetes y formas de calcularlo. 
+
+```{r corr y cov}
+# Primeras 5 filas del dataset
+head(data,5)
+# Resumen variables
+str(data) 
+# Guardo el nombre de las variables numéricas
+vars_numericas <- colnames(data %>% select(where(is.numeric))) 
+
+# Indico que la variable "CatPeso" es un factor, y ordeno los niveles 
+# (el orden por default es alfabético)
+data$CatPeso <- factor(data$CatPeso, levels=c('D','N','SO','OB'))
+```
+La base de datos posee 7 variables numéricas, y 2 variables categóricas de 150 registros. La variable SEXO es dicotómica nominal, y la variable categoría peso es ordinal. 
+
+*Correlación de las variables numéricas*
+```{r corr graphs, include=T, results=T}
+# cambiamos una variable para que correlacione en forma negativa con las restantes 
+# SOLO CON FINES DIDÁCTICOS! 
+data$CC=max(data$CC)-data$CC 
+
+# 3 maneras equivalente de generar una sub-base que posea sólo variables numéricas 
+bd_numericas <- data[c('EDAD','PESO','TALLA','IMC','PIMC','CC')] #selecciono por nombre de columna
+bd_numericas <- data[c(2,4:8)] #selecciono por índice de columna
+bd_numericas <- data %>% select(all_of(vars_numericas),-PACIENTE) #utilizando paquete dplyr y función select
+
+#Matriz de correlación
+M <- cor(bd_numericas) 
+#Matriz de varianza y covarianza
+V <- cov(bd_numericas) #equivalente: var(bd_numericas)
+
+# representa la matriz de correlaciones mediante círculos
+# Círculos rojos indican correlaciòn negativa, y círculos azules indican correlación positiva. Cuanto más grande es el radio del círculo, mayor es el valor absoluto de la correlación.
+corrplot(M,method="circle") # opciones de parámetro METHOD: square / ellipse / number / shade / pie
+# representa la matriz de correlaciones mediante elipses y sólo en sector superior
+# Elipses rojas indican correlaciòn negativa, y elipses azules indican correlación positiva. Cuanto más "flacos" son los elipses, mayor es el valor absoluto de la correlación.
+corrplot(M,method="ellipse", type="upper") # opción: lower
+corrplot.mixed(M,lower="circle", upper="shade") # permite combinaciones de estilos por bloques
+
+# ggcorrplot es un método derivado de ggplot en el que uno le indica la matríz de correlación y en p.mat le indica si quiere que calcule el p-valor. Cuando aparece una X, la correlación no es significativa estadísticamente
+ggcorrplot(M,hc.order = TRUE, outline.col = "white", p.mat=cor_pmat(bd_numericas)) + theme + 
+  labs(title='Correlograma', x='Variable', y=NULL) #method= 'circle'/ type=.../lab=T
+```
+
+
+Hay un método súper interesante de la librería GGally llamada ggpairs que presenta un análisis más abarcativo de la relación entre las variables numércias. Presenta la distribución de cada variable (en la diagonal), un scatterplot de la relación de una variable con otra, y luego un análisis de correlación (con la significancia asociada). Por default, la correlación calculada es la correlación lineal de Pearson, pero puede cambiarse.
+
+```{r ggpairs, include=T, results=T}
+ggpairs(bd_numericas,progress = F) + theme +
+  labs(title= 'Descripción de variables numéricas en la base de datos', 
+       x = 'Variable', y = 'Variable') 
+```
+
+
+
+
+*Correlación de las variables numéricas y asociación de variables realizando apertura por sexo*
+
+Se pueden agregar variables categóricas al graficar (en el siguiente caso, se realiza una apertura por sexo)
+
+```{r ggpairs by sexo, include=T, results=T}
+bd_numericas_sexo <- data %>%select(SEXO, all_of(vars_numericas),-PACIENTE)
+                    # data %>%select(-c(PACIENTE,CatPeso))
+ggpairs(bd_numericas_sexo, 
+        mapping = aes(colour = SEXO, alpha=0.1),
+        
+        upper = list(continuous = wrap("cor", size = 2.5),
+                     discrete = "blank", combo="blank"),
+        #diag = list(continuous = wrap("barDiag")), # si quisiera graficar histogramas
+        lower = list(combo = "box"), progress = F) +
+        theme + labs(title= 'Descripción de variables numéricas en la base de datos', 
+                     x='Variable', y='Variable') 
+```
+
+
+# 3) Caras de Chernoff
+
+Este es un método propuesto por Chernoff (1973). 
+Básicamente este análisis transforma el valor de cada variable en una característica de una cara. Cuanto más parecidas son las caras, es porque el vector de medias de un grupo es más similar al vector de medias de otro grupo. 
+
+En nuestro dataset, se van a comparar caras en función de una nueva variable que incluye **categoría de peso + sexo**.
+
+```{r Chernoff}
+# esto es equivalente en dplyr= bd_femenino <- data %>% filter (SEXO== 'F')
+bd_fem <- data[data$SEXO == 'F',] 
+
+bd_fem <- bd_fem[-c(1,3)]
+bd_fem <- bd_fem %>% group_by(CatPeso) %>% 
+          summarise(across(everything(), mean))
+#Agreg0 '_F' al texto en la columna CatPeso
+bd_fem <- bd_fem %>% mutate(CatPeso = paste0(CatPeso,'_F'))
+
+bd_masc <- data[data$SEXO == 'M',] 
+bd_masc <- bd_masc[-c(1,3)]
+bd_masc <- bd_masc %>% group_by(CatPeso) %>% 
+           summarise(across(everything(), mean))
+bd_masc <- bd_masc %>% mutate(CatPeso= paste0(CatPeso,'_M'))
+
+# Junto las bases de datos en una sola (rbind-> sólo porque tienen las mismas columnas)
+bd <- rbind(bd_fem,bd_masc)
+# me quedo con todas las columnas menos cat peso
+matriz <- as.matrix(bd[,-1])
+rownames(matriz) <- bd$CatPeso # la info de cat peso va como nombre de fila de la matriz
+
+head(matriz)
+
+faces(matriz)# hace un gráfico con las caras de Chernoff
+title("IMC infantil")
+# Se pueden cambiar parámetros de la función [nrow.plot, ncol.plot, face.type]
+faces(matriz,face.type = 2, ncol.plot = 4)
+title("IMC infantil")
+```
+
+Como verán, hay varios "estilos" para realizar este análisis. En cualquier caso, el mismo sirve para realizar un análisis visual rápido y determinar si hay poblaciones más similares que otras.
+
+# 4) Gráficos de estrellas / radar plot
+
+Existen dos tipos de gráficos que son similares (radares y estrellas) que también sirven para realizar una inspección visual rápida de la distribución de las variables en grupos que quiero comparar. 
+En estos gráficos las aristas apuntan a una variable determinada en el dataset, y el largo de esa arista indica el valor medio (o mediano, si se calcula).
+
+A continuación se presentan varias alternativas para realizar este análisis.
+
+```{r star_plot}
+stars(matriz,full = T) #radius=F omite aristas
+stars(matriz,full = T, draw.segments = T, cex = 0.7)
+stars(matriz,full = T, cex = 0.7, len = 0.8, col.stars = terrain.colors(8),
+      ncol = 4, main ='IMC infantil', key.loc = c(2.5,5.5),
+      key.labels = colnames(matriz), xpd = T)
+```
+
+
+```{r radarplot}
+normalize <- function(x, na.rm = TRUE) {return((x- min(x)) /(max(x)-min(x)))}
+
+# me armo nueva base de niños con CatPeso='OB'y normalizo ******
+
+bd_OB <- data%>%filter(CatPeso == 'OB')
+#creo variable 'SEXO'
+SEXO <- bd_OB$SEXO        
+#sapply sirve para aplicar una función (en este caso "normalize") a la base de datos db_OB
+bd_OB_n <- data.frame(sapply(bd_OB %>% select(-c(SEXO,PACIENTE,CatPeso)), normalize)) # los valores de cada columna quedan entre 0 y 1 
+
+# Para poder usar radarplot, tengo que darle los límites del gráfico. 
+# Como se realizó una normalización entre 0 y 1, pongo límite máx=1, min=0
+max <- rep(1,6) #repito 6 veces, y obtengo vector de seis 1s (uno por cada variable)
+min <- rep(0,6)
+
+final <- cbind(SEXO,bd_OB_n) 
+# calculo promedio de variables estandarizadas (agrupando por sexo)
+final <- final %>% group_by(SEXO) %>% summarise(across(everything(), mean)) 
+#armo data frame final, juntando las filas del max, min y medias para femenino y masculino
+df_final <- data.frame(rbind(max, min, final[-1]))
+rownames(df_final) <- c('max','min','Femenino','Masculino')
+  
+head(df_final)
+# elijo colores en RGB (red/green/blue) indicando porcentaje de cada color. El cuarto número se refiere a la transparencia
+colors_in = c(rgb(0.97, 0.46, 0.42, 0.3), rgb(0, 0.78, 0.76, 0.3))
+colors_border = c(rgb(0.97, 0.46, 0.42, 0.8), rgb(0, 0.78, 0.76, 0.8))
+
+radarchart(df_final, axistype = 4, pcol = colors_border, pfcol = colors_in,cglcol = "grey",
+           cglty = 5, axislabcol = "gray50", caxislabels = seq(0,1,5), cglwd = 0.6,
+           vlcex = 0.8, calcex = 0.8, title = 'IMC infantil')
+
+legend(x = 0.9, y = 1.3, legend = rownames(df_final[-c(1,2),]), bty = "n", pch = 20,
+       col = colors_border , text.col = "darkgrey", cex = 0.8, pt.cex = 2)
+```
+
+# 5) Gráficos de barras y mosaico
+
+Un gráfico súper utilizado en los análisis exploratorios de datos multivariados es el gráfico de barras y los gráficos mosaico. 
+
+En el gráfico de barras se suelen expresar el número o proporción de datos de los distintos niveles de una variable categórica.
+En el gráfico de mosaico se puede representar el mismo tipo de data.
+
+
+En el siguiente gráfico se presenta, en un gráfico de barras apilado, el número absoluto de niños que hay en cada sexo (eje x). Además, se agrega la información de la categoría de peso (en las apiladas). Por último, se agregan los totales dentro de cada categoría de sexo.
+
+Si quisiera expresar la frecuencia relativa, y no el número absoluto, podría agregar el parámetro --> position = "fill" en la función geom_bar(). 
+
+```{r freq y barras}
+# calculo cuántos niños hay de cada sexo
+totales <- data %>% count (SEXO)
+
+ggplot(data, aes(x = SEXO, fill = CatPeso)) + 
+    geom_bar() + theme +  
+  labs(title = 'Cantidad de niños en cada categoría de peso según sexo', 
+       x = 'Sexo', y = 'Número de niños') + 
+  scale_fill_viridis_d(name = 'Categoría de peso') +
+  geom_label(data = totales, aes(SEXO, 80, label = n, fill = NULL), 
+             size = 3,show.legend = FALSE)
+
+# si quisiera expresar la frecuencia relativa, y no el número absoluto, podría agregar el parámetro --> position = "fill" en la función geom_bar().
+```
+
+A continuación voy a transformar la variable contínua CC a una variable de 4 categorías.
+
+Luego usaré esa nueva variable (que voy a llamar CC2), para poder graficar
+
+```{r discretización}
+quantile(data$CC)
+
+data$CC2 <- cut(data$CC, 
+                   breaks = c(-0.1,35,45,50,80), 
+                   labels = c('[0-31)','[31-45)','[45-50)','[50-80)'))
+
+tb <- table(data$CC2)
+fr <- round(prop.table(tb)*100,2)
+fr
+```
+
+En este gráfico se presenta la frecuencia relativa de CC (discretizado) según la categoría de peso de los niños. 
+Estoy analizando la relación entre dos variables categóricas. 
+A simple vista se puede observar que no parecen ser independientes porque en la categoría D (de "Categoría de Peso") tengo muchos valores de CC2 del intervalo [50-80], que parecen ir disminuyendo a medida que cambiamos de manera ordenada en los niveles de categoría de peso.... OB no tiene observaciones con ese nivel de la variable, pero tiene muchos más del nivel [0-31] (_podríamos hacer un test de independencia chi cuadrado, por ej, para chequearlo_)
+
+```{r freq}
+totales_ <- data %>% count (CatPeso)
+
+ggplot(data, aes(x = CatPeso, fill = CC2)) + 
+    geom_bar(position = "fill") + theme +  
+  labs(title = 'Frecuecia de niños en cada categoría de CC según CatPeso', 
+       x = 'Categoría de Peso', y = 'Frecuencia relativa')+ 
+  scale_fill_viridis_d(name = 'Intervalo CC')+
+  theme(legend.key.size = unit(0.3, "cm"))+
+  geom_label(aes(CatPeso, 1.05, label = n, fill = NULL), 
+             size = 3, data = totales_,show.legend = FALSE)
+
+
+```
+
+Este mismo análisis se puede reproducir en un gráfico de mosaico (fijensé que son iguales!!)
+
+```{r  mosaico}
+ggplot(data=data) +
+  geom_mosaic(aes(x = product(CatPeso, CC2), 
+                  fill = CatPeso)) +
+  theme + labs(title = 'Distribución categoría de peso\nsegún Índice CC',
+              y = 'Categoría de peso', x = 'Invervalo de índice CC') +
+  scale_fill_viridis_d(name = 'Categoría de peso') +
+  theme(legend.position = 'none')
+
+#mosaic_data <- table(data$CatPeso,data$CC2)
+#mosaicplot(mosaic_data)
+```
+
+
+# 6) Gráficos de puntos + densidad / histogramas
+
+Otro tipo de gráficos que pueden utilizarse para analizar la distribución de **variables numéricas** son los scatter plot. 
+
+Estos gráficos analizarán la distribución conjunta de 2 o 3 variables.
+
+En el gráfico más abajo se muestra la relación de 2 variables. Además, se agregan las distribuciones marginales de cada una de estas variables por separado. Particularmente en este gráfico se agregó una 3er variable (categórica) que indica el sexo de las observaciones.
+
+*Visualización de la relación entre peso y cc en los datos nuevos*
+```{r densidad y scatter}
+plot1 <- ggplot(data, aes(x = as.numeric(CC), y = as.numeric(PESO), 
+                                   color = SEXO)) +
+  geom_point(aes(fill = SEXO),shape = 21, color = "black", size = 2, alpha = 0.4) + 
+  scale_y_continuous(name = "Peso (Kg)") + 
+  scale_x_continuous(name = "CC\nIndice cintura-cadera") + 
+  theme_pubr() +
+  theme(axis.title.y = element_text(size = 13, face="bold"), 
+        axis.title.x = element_text(size = 13, face="bold"),
+        legend.title = element_text(face = "bold"))+
+  theme(legend.position = c(1, 1.2))
+
+dens1 <- ggplot(data, aes(x = CC, fill = SEXO)) + 
+  geom_density(alpha = 0.4) + 
+  theme_void() + 
+  theme(legend.position = "none")
+
+dens2 <- ggplot(data, aes(x = PESO, fill = SEXO)) + 
+  geom_density(alpha = 0.4) + 
+  theme_void() + 
+  theme(legend.position = "none") + 
+  coord_flip()
+
+
+dens1 + plot_spacer() + plot1 + dens2 + plot_layout(ncol = 2, nrow = 2,
+                               widths = c(4, 1), heights = c(1, 4))
+
+```
+
+En el siguiente gráfico se realiza un análisis de 3 variables numéricas
+
+```{r 3d scatter}
+col1 <- c('#F8766D','#00BFC4')
+data_prueba <- data %>% mutate(GENERO = ifelse(SEXO == "F", 1, 2)) # F:1, M:2
+col1 <- col1[as.numeric(data_prueba$GENERO)]
+
+
+scatterplot3d(data_prueba$CC,data_prueba$IMC,data_prueba$PESO,
+              color = alpha(col1,0.3), box=F,angle=45, pch = 19,
+              grid = TRUE, tick.marks = FALSE, xlab = "CC",
+              ylab = "IMC", zlab = "PESO", main ='3D plot')
+
+legend("topright", bty = "n", cex = .9, title = "Sexo",
+       c("Femenino", "Masculino"),
+       fill = c('#F8766D','#00BFC4'))
+
+```
+
+
+# 7) Curvas de nivel
+
+Las curvas de nivel son otro tipo de estrategia utilizada para representar los valores de variables numéricas. 
+Aquí se representan sobre valores sintéticos, pero también podrían utilizarse con los datos que presentamos en esta notebook. 
+
+Los gráficos de nivel suelen utilizarse para representar la coocurrencia de distintos valores de dos variables. 
+
+<span style="color:blue"> Datos sintéticos </span>
+```{r nivel}
+x=y=seq(-4*pi,4*pi,len = 27)
+r=sqrt(outer(x^2,y^2,"+"))
+filled.contour(r,axes = FALSE) # grafica las curvas de nivel del cono dado por la función r
+filled.contour(exp(-0.1*r), frame.plot=FALSE, plot.axes={}) # grafica las curvas de nivel del cono dado por la función exp(-0.1*r)
+
+# lo mismo en ggplot:https://r-charts.com/es/correlacion/contour-ggplot2/
+```
+
+Ahora miramos nuestros datos
+
+<span style="color:blue"> Datos de peso que veníamos usando </span>
+```{r nivel2}
+ggplot(data, aes(x = as.numeric(CC), y = as.numeric(PESO))) +
+  geom_density_2d()+theme
+
+```
+
+# 8) Gráfico de coordenadas paralelas / perfiles (ejemplo, perfiles medios calculados previamente)
+
+En las siguientes figuras se muestran gráficos de coordenadas paralelas.
+
+Los datos tratan de disintos postulantes a una entrevista que fueron puntuados para 3 características (cordialidad, presencia e idioma) por 2 jueces distintos.
+Cada juez puntua a cada postulante... para evitar sesgos particulares de un dado juez (por ejemplo, que sea muy "positivo" y ponga todos los puntajes muy altos o la inversa para un juez muy "negativo") se estandarizan los puntajes de cada postulante dentro por juez [*de este modo, el peor postulante para la variable "cordialidad" puede compararse entre jueces, por ejemplo*].
+
+Los gráficos de coordenadas paralelas muestran el valor que adquiere cada observación (postulante) para las 3 variables medidas. Esto se hace para cada juez (es decir, se van a ver tantas líneas como observaciones tengamos).
+
+Si se grafican perfiles (vectores medios), entonces voy a tener una curva por cada juez o una curva por cada variable (dependiendo cómo agrupo y se grafico perfiles fila o perfiles columna).
+
+
+## **Cargo datos**
+<span style="color:blue"> BD de entrevistas recepcionistas </span>
+```{r coordenadas paralelas}
+#gráfico de coordenadas paralelas
+url2 <- 'https://docs.google.com/spreadsheets/d/1uQ6uq_qaoUBNHhskRM1iIGhZUu-2E84f'
+bd_recepcionistas <- gsheet2tbl(url2)
+head(bd_recepcionistas)
+
+# Transformación de escalado (x-mean/sd) por fila (por candidato): 
+# todas las variables están normalizadas por cada candidato, y en este caso, separado de cada juez
+recep_st <- scale(t(bd_recepcionistas[,-c(1,5)]), center=T, scale=TRUE)
+apply(t(recep_st), 1, mean) # chequeo que las 12 filas (6 cand. x 2 jueces) tengan media cero  (desvío 1)
+recep_st <- data.frame(t(recep_st))
+# agrego cols candidatos y jueces
+recep_st$candidatos <- bd_recepcionistas$candidatos
+recep_st$juez <- factor(bd_recepcionistas$juez)
+```
+
+```{r perfiles}
+# Gráfico de coordenadas paralelas
+ggparcoord(data = recep_st, scale = 'globalminmax', # → Sin escalado
+           columns = 1:3, alphaLines = 0.4, groupColumn = 5) +
+  theme + ggtitle("Gráfico de coordenadas paralelas") +
+  xlab('Variable') + ylab('Valor estandarizado')
+
+# Gráfico de perfiles (puntaje promedio que cada juez dió en cada variable)
+
+head(bd_recepcionistas)
+
+df_perfiles <- bd_recepcionistas[2:5] %>% group_by(juez) %>% summarise_all(mean)
+df_perfiles$juez <- factor(df_perfiles$juez)
+
+ggparcoord(data = df_perfiles, columns=2:4, scale='globalminmax', groupColumn = 1) + 
+  #globalminmax → Sin escalado
+  theme + ggtitle("Comparación de puntajes por Juez\nsegún gráfico de perfiles") +
+  xlab('Variable') + ylab('Valor medio')
+```
+
+```{r comparación de perfiles de variables}
+head(recep_st)
+
+recep_st2 <- recep_st %>% 
+  pivot_longer(!c(candidatos,juez), names_to = "Variable", values_to = "valor")
+
+head(recep_st2)
+
+ggplot(data = recep_st2, aes(x = candidatos, y = valor, color = Variable, group = Variable)) +
+  geom_point() + facet_grid(~juez) + theme + 
+  theme(legend.position='bottom') + geom_line() +
+  labs(title = 'Comparación de perfiles de variables según juez',
+       y = 'Valor estandarizado', x = 'Postulante')
+```
+
+Así como se graficó un perfil medio (sólo una curva), yo podría tener una intuición no sólo de la media, sino que también podría mirar la distribución general o la mediana, por ejemplo. Para ello podrían utilizar boxplots (la caja representa el rango intercuartil q25-q75, luego se grafica la mediana (línea más gruesa), y se grafican los "bigotes" que muestran los límites de la distribución. Los outliers son aquellas observaciones extremas que aparecen como círculos por encima o debajo de los bigotes [*whiskers*]).
+
+En los siguientes gráficos se representan boxplots de la distribución de cada variable. 
+
+<br/>
+<span style="color:blue"> BD de IMC infantil </span>
+
+```{r Transformación por columna}
+head(data)
+
+data_st <- data %>% select (-c(1,3,9,10)) %>% summarise_all(scale)
+data_st$PACIENTE <- data$PACIENTE
+
+head(data_st)
+
+boxplot(data_st[1:6], col=terrain.colors(6), cex.axis=0.6, ylab="", main="Datos biométricos")
+
+data_st1 <- data_st %>% pivot_longer(!PACIENTE, names_to ='Variable', values_to = 'Valores')
+
+ggplot(data= data_st1, aes(y = Valores, x = Variable, color = Variable, fill = Variable,alpha=0.2)) +
+  geom_boxplot() + theme + theme(legend.position='none') +
+  scale_fill_viridis_d(option = 'inferno') + scale_color_viridis_d(option = 'inferno') + 
+  labs(title='Variables estandarizadas (por columna)') +
+  geom_hline(yintercept = c(-1,1), linetype = "dotted", color = 'gray60')
+
+#Chequeo
+mean(data_st$EDAD)
+sd(data_st$EDAD)
+```
+
+# 9) Alternativas robustas
+
+Muchas veces la distribución de las variables tiene presencia de outliers o valores muy extremos que no se corresponden con la distribución general. 
+
+Algunos de los estadísticos que calculamos previamente son muy sensibles a la presencia de outliers (es decir, cambian mucho por sólo la presencia de este/os outlier/s), por lo cuál no representan fielmente la distribución y deberían ser reemplazados por otro tipo de estadístico. 
+
+Ejemplo de esto último es la media. 
+Si yo calculo la media de los valores [1,1,1,1,2,1,1,0,1,1] será = 1, pero si le cambio un valor por un outlier será muy distinto: ej [1,1,1,1,2,1,1,0,1,1000] aprox 100 !!!
+
+Para mitigar este efecto, es necesario trabajar con otro tipo de estadísticos o estrategias. 
+
+<br/>
+A continuación se presentan 3 estategias posibles:
+
+1- Usar medianas en vez de medias.
+2- Remover outliers según ajuste a la distribución chi cuadrado cuando calculo distancia de Mahalanobis de todos los puntos.
+3- Usar estrategias que no consideren todos los datos, sino los "centrales".
+
+<br/>
+Genero datos arficiales a partir de una distribución normal. Después le agrego un par de outliers y grafico la distribución.
+Estos datos son normales (puntos verdes) o tienen outliers (población roja)
+
+```{r robust,warning=F, message=F, warn.conflicts=FALSE}
+library(MASS)
+set.seed(0)
+bivariate_data <- as.data.frame(mvrnorm(n = 150,mu = c(0, 0),
+                                        Sigma = matrix(c(5, 3, 4, 4), ncol = 2)))
+bivariate_data$V1 <- scale(bivariate_data$V1)
+bivariate_data$V2 <- scale(bivariate_data$V2)
+colnames(bivariate_data) <- c('V1','V2')
+bivariate_data$nor <- 'si'
+
+bivariate_data2 <- data.frame(scale(data$CC),scale(data$PESO))
+bivariate_data2$nor  <- 'no'
+colnames(bivariate_data2) <- c('V1','V2','nor')
+
+bivariate_data3 <- rbind(bivariate_data, bivariate_data2)
+
+
+plot2 <- ggplot(bivariate_data3, aes(x = V1, y = V2, 
+                                   color = nor)) +
+  geom_point(aes(fill=nor ),shape = 21, color = "black", size = 2, alpha=0.4) + 
+  scale_y_continuous(name = "Variable 2") + 
+  scale_x_continuous(name = "Variable 1") + 
+  theme_pubr() +
+  theme(axis.title.y = element_text(size = 13, face = "bold"), 
+        axis.title.x = element_text(size = 13, face = "bold"),
+        legend.title = element_text(face = "bold"))+
+  theme(legend.position = c(1, 1.2))
+
+dens3 <- ggplot(bivariate_data3, aes(x = V1, fill = nor )) + 
+  geom_density(alpha = 0.4) + 
+  theme_void() + 
+  theme(legend.position = "none")
+
+dens4 <- ggplot(bivariate_data3, aes(x = V2, fill = nor )) + 
+  geom_density(alpha = 0.4) + 
+  theme_void() + 
+  theme(legend.position = "none") + 
+  coord_flip()
+
+
+dens3 + plot_spacer() + plot2 + dens4 + plot_layout(ncol = 2, nrow = 2,
+                               widths = c(4, 1), heights = c(1, 4))
+```
+
+
+
+
+## A - Vector de medianas
+
+Si analizo la población verde (sin outliers), se verá que el vector de medias (triangulo verde) y el vector de medianas (triangulo negro invertido) son muy similares. En ambos casos se encuentran centrados en la distribución de las variables 1 y 2 (mis variables generadas artificialmente).
+```{r vectores2}
+# me quedo sólo con las variables numéricas
+vector_medias <- apply(bivariate_data[,1:2], 2, mean) 
+vector_medias_nonorm <- apply(bivariate_data2[,1:2], 2, mean) 
+vector_medianas<- apply(bivariate_data[,1:2], 2, median) 
+vector_medianas_nonorm<- apply(bivariate_data2[,1:2], 2, median) 
+
+tablita <- as.data.frame(rbind(vector_medias,vector_medias_nonorm,vector_medianas,vector_medianas_nonorm))
+head(tablita)
+```
+
+Si ahora grafico lo que sucede con la población roja, la que tenía un outlier, se puede ver que ahora el vector de media y mediana ya no son tan coincidentes. El de medias (triangulo rojo) está más corrido hacia donde se encuentra el outlier, y no está tan centrado con la distribución.
+
+```{r grafico1}
+ggplot(bivariate_data, aes(x = V1, y = V2)) +
+  geom_point(shape = 21, color = 'black',fill = '#00BFC4', size = 2, alpha=0.4) + 
+  scale_y_continuous(name = "Variable 2") + 
+  scale_x_continuous(name = "Variable 1") + 
+  theme+
+  theme(legend.position = c(1, 1.2)) + labs(title= 'Scatter plot datos normales')+
+  annotate("point", x = vector_medias[1], y = vector_medias[2], colour = "black", fill='#117d80', shape=24, size=3)+
+  annotate("point", x = vector_medianas[1], y = vector_medianas[2], colour = "black", fill='black', shape=25, size=3)
+
+```
+
+```{r grafico2}
+ggplot(bivariate_data2, aes(x = V1, y = V2)) +
+  geom_point(shape = 21, color = "black", size = 2, alpha=0.4, fill='#F8766D') + 
+  scale_y_continuous(name = "Variable 2") + 
+  scale_x_continuous(name = "Variable 1") + 
+  theme+
+  theme(legend.position = c(1, 1.2)) + labs(title= 'Scatter plot datos no normales')+
+  annotate("point", x = vector_medias_nonorm[1], y = vector_medias_nonorm[2], colour = "black", fill='#d13c32', shape=24, size=3)+
+  annotate("point", x = vector_medianas_nonorm[1], y = vector_medianas_nonorm[2], colour = "black", fill='black', shape=25, size=3)
+
+```
+
+
+## B - Distancia Mahalanobis
+
+Ahora calculamos distancia de mahalanobis de las dos poblaciones que habíamos definido previamente (la verde y la roja).
+
+Si graficamos la distribución de las distancias vemos que la población roja tiene valores más extremos de distancia. Posiblemente esos datos más extremos sean outliers.
+
+```{r mahalanobis}
+bivariate_data$mahalanobis <- mahalanobis(bivariate_data[,1:2],
+                                          colMeans(bivariate_data[,1:2]),
+                                          cov(bivariate_data[,1:2]))
+
+bivariate_data2$mahalanobis <- mahalanobis(bivariate_data2[,1:2], 
+                                           colMeans(bivariate_data2[,1:2]),
+                                           cov(bivariate_data2[,1:2]))
+
+bivariate_data3 <- rbind(bivariate_data,bivariate_data2)
+
+ggplot(bivariate_data3, aes(x = mahalanobis, color = nor, fill = nor)) + 
+  geom_histogram(position = 'identity',alpha = 0.3) + theme +
+  labs(title = 'Distancia Mahalanobis', x = 'Distancia mahalanobis', y = 'Cantidad')
+
+#k=número de variables
+#data$pvalue <- pchisq(data$mahalnobis, df=k-1, lower.tail=FALSE)
+#p-valor<0.001 son considerados outliers
+```
+
+## C - MVE /  MCD
+
+Por último vamos a presentar el código para realizar MVE (Minimum Volume Ellipsoid) o MCD (Minimum Covariance Determinant).
+
+- MVE: El MVE busca un elipsoide de volumen mínimo con dos restricciones: (1) Que el elipsoide debe contener ℎ puntos en su interior unión su frontera, y (2) el elipsoide debe contener al menos 𝑝+1 puntos en su frontera.
+- MCD: El MCD es matemáticamente equivalente a encontrar un elipsoide de volumen mínimo con solo una restricción, a saber, que el elipsoide debe contener ℎ puntos en su interior unión su frontera.
+
+Ambos métodos calculan vectores de posición y escala pero **no consideran todos los datos**... es decir, calculan usando los datos pero tratando de dejar por fuera a los outliers.
+
+```{r MVE-MCD,warning=F, message=F, warn.conflicts=FALSE}
+library(rrcov)
+CovMve(bivariate_data[,1:2], alpha = 0.7, nsamp = 100, seed = NULL, trace = FALSE)
+CovMve(bivariate_data2[,1:2], alpha = 0.7, nsamp = 100, seed = NULL, trace = FALSE)
+
+# alpha= parámetro numérico que controla el tamaño de los subsets sobre el cuál se calcula el determinante. Va entre 0.5-1
+# nsamp= número de subsets para estimadores iniciales. Pueden ser valores numéricos o poner "best"/"exact" (ojo que acá tarda)
+
+library(robustbase)
+covMcd(bivariate_data[,1:2])
+```
