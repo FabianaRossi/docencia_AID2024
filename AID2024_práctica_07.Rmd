@@ -1,0 +1,850 @@
+---
+title: "Clase 7: Análisis de Correspondencias Simple y Múltiple"
+author: "Práctico AID 2024"
+date: "11/05/2024"
+output:
+  html_document:
+    toc: yes
+    toc_float: yes
+    df_print: paged
+  
+---
+
+# Introducción ACS
+
+El análisis de corrrespondencias es una técnica descriptiva/exploratoria diseñada para analizar correspondencias entre filas y columnas de una tabla múltiple. Constituye una extensión de la Análisis de Componentes Principales (PCA) para datos categóricos, y permite la exploración de su estructura.
+
+El objetivo del análisis de correspondencias es la representación de las entradas de la tabla de frecuencias relativas en términos de distancias entre filas y columnas individuales, en un espacio de baja dimensión (escalado multidimensional).
+
+Asume que las variables son nominales y permite describir las relaciones entre las categorías de cada variable, así como la relación entre las variables. Además, el análisis de correspondencias se puede utilizar para analizar cualquier tabla de medidas de correspondencia que sean positivas.
+
+
+## Cargo librerías
+```{r librerias, warning=F, message=F, warn.conflicts=FALSE}
+library(FactoMineR)
+library(factoextra)
+library(RColorBrewer)
+library(ggplot2)
+library(ggmosaic)
+library(dplyr)
+library(tidyverse)
+library(DescTools)
+library(corrplot)
+library(gplots)
+library(FactoClass)
+library(rgl)
+library(logmult)
+library(anacor)
+library(vcdExtra)
+```
+
+## Estilo general para los gráficos
+```{r theme}
+theme <- theme(text = element_text(size=10),
+               plot.title = element_text(size = 12, face = "bold.italic", hjust = 0.5), 
+               axis.title.x = element_text(size = 10, face="bold", colour='black'),         
+               axis.title.y = element_text(size = 10, face="bold"),
+               panel.border = element_blank(),
+               panel.grid.major = element_blank(),
+               panel.grid.minor = element_blank(), 
+               legend.title = element_text(face="bold"))
+```
+
+
+## Intuición gráfica
+_(Ejemplo M.Greenacre) Relación entre destinos de un viaje y cantidad de días festivos_
+```{r ed}
+# Creación de BD
+noruega <- c(6,1,11)
+canada <- c(1,3,11)
+grecia <- c(4,25,0)
+francia <- c(2,2,20)
+df_viaje <-  rbind(noruega,canada,grecia,francia)
+colnames(df_viaje) <- c("Festivos","Media Jornada","J. completa")
+rownames(df_viaje) <- c("noruega","canada","grecia","francia")
+df_viaje
+```
+
+Cálculo de perfiles fila
+```{r ed1}
+# Perfiles fila (la suma de las frecuencias de cada fila da 1)
+df_viaje_fila <-  round(prop.table(df_viaje,1),3)
+df_viaje_fila
+```
+
+Representación de perfiles fila sobre coordenadas de columnas 
+Distancias euclídeas sobre plano
+```{r ed2}
+open3d()
+bg3d(color = "white")
+rgl.lines(c(0,1.2),c(0,0),c(0,0), color='lightgray')
+rgl.lines(c(0,0),c(0,1.2),c(0,0), color='lightgray')
+rgl.lines(c(0,0),c(0,0),c(0,1.2), color='lightgray')
+
+rgl.lines(c(0,0),c(0,1),c(1,0), size=2, color='steelblue2')
+rgl.lines(c(0,1),c(1,0),c(0,0), size=2, color='steelblue2')
+rgl.lines(c(0,1),c(0,0),c(1,0), size=2, color='steelblue2')
+
+rgl.points(df_viaje_fila[,2],df_viaje_fila[,3],df_viaje_fila[,1], size=4, color='darkblue')
+
+rgl.texts(df_viaje_fila[,2],df_viaje_fila[,3],df_viaje_fila[,1], text=rownames(df_viaje_fila), color='darkblue', cex=.5)
+
+rgl.texts(matrix(c( 0,0,1.25, 1.15,0,0, 0,1.15,0), byrow = T, ncol = 3), text=colnames(df_viaje_fila), color='steelblue2')
+
+rglwidget()
+```
+
+Explicación gráfica de Inercia
+![-](/Users/FR/Documents/Burocrático/DOCENCIA/MATERIAS/8_AID/2023/clase 9/inercia.png)
+
+_Foto tomada de https://www.fbbva.es/wp-content/uploads/2017/05/dat/DE_2008_practica_analisis_correspondencias.pdf, página 50_
+
+_A mayores valores de inercia (> chi-cuadrado), mayor alejamiento de la independencia y del perfil medio_
+
+
+Representación de perfiles fila sobre coordenadas de columnas 
+Distancias chi-cuadrado
+```{r ed3, message=F, warning=F}
+open3d()
+bg3d(color = "white")
+table.pro <- df_viaje/apply(df_viaje,1,sum)
+table.x   <- 1-table.pro[,1]-table.pro[,3]/2
+table.y   <- table.pro[,3]*sqrt(3)/2
+
+table.rowsum <- apply(df_viaje, 1, sum)
+table.colsum <- apply(df_viaje, 2, sum)
+table.sum    <- sum(df_viaje)
+table.exp    <- table.rowsum%o%table.colsum/table.sum
+chi2         <- sum((df_viaje-table.exp)^2/table.exp)
+
+# distancias chi-cuadrado de perfiles fila al perfil fila medio
+table.colmass <- table.colsum/table.sum
+sqrt(apply((t(table.pro)-table.colmass)^2/table.colmass, 2, sum))
+# todas las distancias chi-cuadrado
+tablec.pro <- rbind(table.pro,table.colmass)
+rownames(tablec.pro)[5] <- "ave"
+dist(sweep(tablec.pro, 2, sqrt(table.colmass), FUN = "/"))
+
+# Gráfico de distancias chi-cuadrado
+table.wt <- sqrt(table.colmass)
+
+rgl.lines(c(0,1.1/table.wt[2]), c(0,0), c(0,0), color='lightgray')
+rgl.lines(c(0,0), c(0,1.1/table.wt[3]), c(0,0), color='lightgray')
+rgl.lines(c(0,0), c(0,0), c(0,1.1/table.wt[1]), color='lightgray')
+
+rgl.lines(c(0,0), c(0,1/table.wt[3]), c(1/table.wt[1],0), size = 2, color='red')
+rgl.lines(c(0,1/table.wt[2]), c(1/table.wt[3],0), c(0,0), size = 2, color='red')
+rgl.lines(c(0,1/table.wt[2]), c(0,0), c(1/table.wt[1],0), size = 2, color='red')
+
+table.chi <- t(t(table.pro)/table.wt)
+
+rgl.points(table.chi[,2],table.chi[,3],table.chi[,1], size=4, color='darkred')
+
+rgl.texts(table.chi[,2], table.chi[,3], table.chi[,1], text = rownames(df_viaje), color='darkred', cex=0.5)
+rgl.texts(matrix(c( 0,0,1.15/table.wt[2], 1.15/table.wt[3],0,0, 0,1.15/table.wt[1],0), 
+          byrow = T, ncol = 3), text = colnames(df_viaje), color='darkred')
+rglwidget()
+```
+------------------------------------------------
+# Ejemplos ACS
+## 1) Ejemplo 1
+### Creo datos
+_Relación de grado de atención de niños según el nivel SC de sus padres_ 
+```{r datos1, echo=TRUE}
+# Creación de BD
+atento  <- c(64,57, 57, 72, 36 ,21)
+leve    <- c(94,94,105,141, 97 ,51)
+moderado <- c(58,54, 65, 77, 54 ,34)
+disperso <- c(46,40, 60, 94, 78 ,51) 
+base <-  rbind(atento,leve,moderado,disperso)
+colnames(base) <- c("A","B","C","D","E","F")
+rownames(base) <- c("Atento","Sínt.leves","Sínt.moderados","Disperso")
+base
+```
+
+### Test de independencia Chi cuadrado
+```{r test, echo=TRUE}
+# Test de independencia Chi-cuadrado
+chisq.test(base)
+```
+
+Representación gráfica de los resultados (valores absolutos)
+```{r r}
+balloonplot(t(as.table(as.matrix(base))), main ="Atención según nivel SC padres", xlab ="", ylab="",
+            label = FALSE, show.margins = FALSE)
+```
+
+Gráfico de mosaico
+```{r mosaico, echo=TRUE, warning=F}
+#mosaicplot(base, col=brewer.pal(10,"Paired"), main="Distribución categoría de nivel atención\nsegún Nivel sc padres")
+
+df_base <- data.frame(base)
+df_base$atencion <- rownames(df_base)
+df_base <- df_base %>% pivot_longer(!atencion, names_to = "Variable", values_to = "valor")
+df_base <- as.data.frame(lapply(df_base, rep, df_base$valor))
+df_base$atencion <- factor(df_base$atencion, levels= c('Disperso','Sínt.moderados', 'Sínt.leves','Atento'))
+
+ggplot(data=df_base) +
+  geom_mosaic(aes(x = product(atencion, Variable), 
+                  fill = Variable, alpha=atencion)) + theme +
+  labs(title = 'Distribución categoría de nivel atención\nsegún Nivel sc padres',
+              y = 'Nivel de atención', x = 'Nivel sc padres') +
+  scale_fill_viridis_d() +
+  theme(legend.position = 'none')
+
+```
+
+### Análisis de perfiles
+Perfiles Fila
+```{r perfiles fila, echo=TRUE, warning=F}
+# Perfiles fila (frecuencias de A/B/C... condicionales a cada categoría de atención)
+bd_fila <-round(prop.table(base,1),3)
+bd_fila 
+
+ggplot(data=df_base, aes(x = atencion, fill= Variable))+geom_bar(position='fill', alpha=0.9)+theme+
+  labs(title = 'Distribución categoría de nivel sc padres según atención',
+              y = 'Frecuencia de niños', x = 'Atención') +
+  scale_fill_viridis_d(name='Nivel SC padres') 
+
+bd_fila <- as.data.frame(bd_fila) 
+bd_fila$atencion <- rownames(bd_fila)
+bd_fila <- bd_fila %>% pivot_longer(!atencion, names_to = "Variable", values_to = "valor")
+
+ggplot(data=bd_fila, aes(y = valor, x= atencion, color=Variable))+geom_line(aes(group = Variable))+theme+
+  labs(title = 'Distribución categoría de nivel sc padres según atención',
+              y = 'Frecuencia de niños', x = 'Atención') +
+  scale_color_viridis_d(name='Nivel SC padres') 
+
+#plotct (base,"row",col=brewer.pal(10,"Paired"))# -> equivalente!
+```
+
+Perfiles Columna
+```{r perfiles columna, echo=TRUE, warning=F}
+# Perfiles columna (frecuencias de niveles de atención, condicional a cada columna (categoría SC padres))
+bd_col <- round(prop.table(base,2),3)
+bd_col
+
+ggplot(data=df_base, aes(x = Variable, fill= atencion))+geom_bar(position='fill', alpha=0.9)+theme+
+  labs(title = 'Distribución categoría de nivel atención\nsegún Nivel sc padres',
+              y = 'Frecuencia de niños', x = 'Nivel sc padres') +
+  scale_fill_viridis_d(name='Atención') 
+
+
+bd_col <- as.data.frame(bd_col) 
+bd_col$atencion <- rownames(bd_col)
+bd_col <- bd_col %>% pivot_longer(!atencion, names_to = "Variable", values_to = "valor")
+
+ggplot(data=bd_col, aes(y = valor, x= Variable, color=atencion))+geom_line(aes(group = atencion))+theme+
+  labs(title = 'Distribución categoría de nivel de atención según nivel SC padres',
+              y = 'Frecuencia de niños', x = 'Nivel SC padres') +
+  scale_color_viridis_d(name='Atención') 
+```
+
+### Análisis de correspondencia simple
+```{r ACS,echo=TRUE}
+atencion.ac = CA(base,graph=FALSE) # Realiza el analisis de correspondencias
+get_ca_row(atencion.ac) # Muestra lo que se guarda de las filas
+get_ca_col(atencion.ac) # Muestra lo que se guarda de las columnas
+```
+
+Contribución de filas y columnas
+```{r ACS1,echo=TRUE}
+# Contribución de filas y columnas al eje 1
+fviz_contrib(atencion.ac,choice="row",axes=1, fill="royalblue",color ="black")+ theme(axis.text.x = element_text(angle=0)) + theme + labs(title = 'Contribución de filas',  x = 'Nivel de atención', y = 'Contribución (%)')+theme(panel.background = element_rect(fill = "grey95"))
+
+fviz_contrib(atencion.ac,choice="col",axes=1, fill="royalblue",color ="black")+
+ theme(axis.text.x = element_text(angle=0)) + theme + labs(title = 'Contribución de columnas',  x = 'Nivel SC', y = 'Contribución (%)')+theme(panel.background = element_rect(fill = "grey95"))
+
+```
+
+### Biplot simétrico
+_OJO con la compatibilidad de coordenadas filas - columnas y las distancias calculadas. No se pueden analizar distancias entre categorías de fila y columna en un biplot simétrico. Las comparaciones son entre puntos fila o entre puntos columna, por separado._
+
+```{r BiPlot,echo=TRUE, warning=FALSE, message=FALSE}
+fviz_ca_biplot( atencion.ac , repel  =TRUE, col.row="royalblue",col.col="indianred") + labs(title='Biplot Análisis de correspondencias Simple')+
+theme+theme(panel.background = element_rect(fill = "grey95"))
+
+fviz_ca_biplot( atencion.ac , repel  =TRUE, col.row="blue",col.col="cos2",gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07")) + labs(title='Biplot Análisis de correspondencias Simple\ncalidad de representación (cos2)')+
+theme+theme(panel.background = element_rect(fill = "grey95"))
+```
+
+Análisis de porcentaje de inercia explicada en cada dimensión
+```{r SP,echo=TRUE}
+fviz_screeplot(atencion.ac, addlabels = TRUE, ylim = c(0, 105))+
+ theme(axis.text.x = element_text(angle=0)) + theme + labs(title = 'Scree plot',  x = 'Dimensión', y = 'Contribución inercia explicada')+theme(panel.background = element_rect(fill = "grey95"))
+```
+
+Coordenadas de puntos en nuevas dimensiones
+```{r BP,echo=TRUE}
+#coordenadas de filas y columnas
+atencion.ac$row$coord 
+atencion.ac$col$coord
+atencion.ac$eig #autovalores, inercia explicada
+```
+
+Información contenida por fila/col (coordenadas, contribuciones, calidad de representación [cos2] e inercia)
+```{r BP1,echo=TRUE}
+atencion.ac$row
+```
+
+### Análisis de residuos
+```{r residuos,echo=TRUE}
+# Análisis de residuos del test chi q
+corrplot(chisq.test(base)$residuals , is.cor = FALSE, main='Residuales')
+
+base_completa <- as.data.frame(base) 
+base_completa$marginales <- rowSums(base_completa)
+margin.table(base, 1)
+base_completa <- rbind(base_completa,colSums(base_completa))
+margin.table(base, 2)
+base_completa <- base_completa %>% mutate(perf_medioF= round(marginales/1600,2))
+base_completa <- rbind(base_completa,round(colSums(base_completa)/1600,2))
+rownames(base_completa)<-c("Atento","Sínt.leves","Sínt.moderados","Disperso","marginales2","perfil_medioC")
+```
+
+BASE DE DATOS OBSERVADA CON MARGINALES y frecuencias medias
+```{r obs_marginales}
+base_completa
+```
+
+BASE DE DATOS ESPERADA
+```{r esp}
+round(ExpFreq(base, freq='abs'),0)
+#round(ExpFreq(base, freq='rel'),2)
+```
+
+
+## 2) Ejemplo 2
+### Cargo datos
+_Responsabilidad de tareas del hogar utilizando base de datos de R_
+```{r datos_biss, echo=TRUE}
+data(housetasks)
+housetasks
+```
+
+### Test de independencia Chi cuadrado
+```{r test2, echo=TRUE}
+# Test de independencia Chi-cuadrado
+chisq.test(housetasks)
+```
+
+Representación gráfica de valores absolutos de la tabla
+```{r gplots}
+dt <- as.table(as.matrix(housetasks))
+balloonplot(t(dt), main ="Tareas del hogar", xlab ="", ylab="",
+            label = FALSE, show.margins = FALSE)
+```
+
+### Análisis de correspondencias simple
+```{r housetasks0}
+house.ca <- CA(housetasks, graph = FALSE)
+
+# Análisis de correspondencias de filas y columnas en simultáneo
+fviz_ca_biplot(house.ca) +
+ theme(axis.text.x = element_text(angle=0)) + theme + labs(title = 'Biplot de Análisis de Correspondencia')+theme(panel.background = element_rect(fill = "grey95"))
+
+fviz_screeplot(house.ca, addlabels = TRUE, ylim = c(0, 50))+
+ theme(axis.text.x = element_text(angle=0)) + theme + labs(title = 'Scree plot',  x = 'Dimensión', y = 'Contribución inercia explicada')+theme(panel.background = element_rect(fill = "grey95"))
+#fviz_ca_row(house.ca) #filas
+#fviz_ca_col(house.ca) #columnas
+
+house.ca$row$coord #cos2/contrib/intertia
+house.ca$col$coord #cos2/contrib/intertia
+```
+
+## 2) Ejemplo 3
+### Cargo datos
+_Relación de edad al delinquir y el año (base de datos del paquete logmult)_
+```{r datos_bis, echo=TRUE, warning=FALSE}
+data("criminal", package = "logmult")
+criminal
+```
+
+### Test de independencia Chi-cuadrado
+```{r test3, echo=TRUE}
+# Test de independencia Chi-cuadrado
+chisq.test(criminal)
+```
+
+Representación gráfica de valores absolutos
+```{r rr}
+dtc <- as.table(as.matrix(criminal))
+balloonplot(t(dtc), main ="AC de crímenes y edad", xlab ="", ylab="",
+            label = FALSE, show.margins = FALSE)
+```
+
+### Análisis de correspondencias simple
+```{r housetasks}
+criminal.ca <- CA(criminal, graph = FALSE)
+
+# Análisis de correspondencias de filas y columnas en simultáneo
+fviz_ca_biplot(criminal.ca) +
+ theme(axis.text.x = element_text(angle=0)) + theme + labs(title = 'Biplot de Análisis de Correspondencia')+theme(panel.background = element_rect(fill = "grey95"))
+
+fviz_screeplot(criminal.ca, addlabels = TRUE, ylim = c(0, 100))+
+ theme(axis.text.x = element_text(angle=0)) + theme + labs(title = 'Scree plot',  x = 'Dimensión', y = 'Contribución inercia explicada')+theme(panel.background = element_rect(fill = "grey95"))
+#fviz_ca_row(criminal.ca) #filas
+#fviz_ca_col(criminal.ca) #columnas
+
+criminal.ca$row$coord #cos2/contrib/intertia
+criminal.ca$col$coord #cos2/contrib/intertia
+```
+
+# Introducción ACM
+
+El análisis de correspondencias es una técnica descriptiva/exploratoria diseñada para analizar correspondencias entre datos categóricos nominales, y permite la exploración de su estructura subyacente.
+
+El objetivo del análisis de correspondencias es la representación de las entradas de la tabla de frecuencias relativas en términos de distancias euclídeas entre filas y columnas individuales, en un espacio de baja dimensión (escalado multidimensional). Estas distancias euclídeas representan las distancias chi cuadrado de las proporciones de la tabla de frecuencias. 
+
+
+# Ejemplos ACM
+## 1) Ejemplo 1
+
+_*Admisiones de Universidad de California Berkeley*_
+
+_Datos de aplicantes a Berkeley para los 6 departamentos más grandes en 1973, clasificado por admisión y sexo._
+
+### Preparo datos 
+```{r data1}
+# Cargo datos
+data(UCBAdmissions)
+# Paso a data frame
+admin <- as.data.frame(UCBAdmissions)
+admin
+# Expando la tabla de frecuencias a rows individuales
+admin_exp <- admin[rep(1:nrow(admin), admin[,4]),-4]
+admin_exp
+# Reseteo el índice de las filas
+rownames(admin_exp) <- NULL
+```
+
+### Aplico MCA 
+```{r data1 mca}
+# Análisis de correspondencias múltiple
+admin.mca <- MCA(admin_exp, graph = FALSE)
+# Resúmen de MCA
+summary(admin.mca)
+```
+
+### Gráficos MCA 
+
+#### Screeplot 
+```{r data1 mca graficos1}
+# Screeplot
+fviz_screeplot(admin.mca, addlabels = TRUE)+theme
+```
+
+#### Biplot 
+```{r data1 mca graficos2, warning=F}
+# Biplot (individuos + variables)
+fviz_mca_biplot( admin.mca , repel  =TRUE, col.ind="cos2",invisible="quali") + labs(title='Biplot Análisis de correspondencias Múltiple')+ theme
+# select.ind = list(contrib = 30),select.var = list(contrib = 10)) #[dentro de fviz_mca_biplot, si quisiera ver sólo aquellos indiviudos y variables en el top 30/10 de contribución, respectivamente]
+
+# Biplot coloreado según género
+grp <- as.factor(admin_exp[, "Gender"])
+fviz_mca_biplot(admin.mca, label="var", col.var ="blue",
+   habillage=grp, addEllipses=TRUE, ellipse.level=0.95,invisible="quali") +
+   theme # el label podría tmb ser de individuos
+```
+
+#### Análisis de variables 
+```{r data1 mca graficos3}
+# Análisis de variables
+colores=as.character(c(3,3,2,2,1,1,1,1,1,1))
+
+# biplot variables
+fviz_mca_var(admin.mca, col.var=colores,invisible="quali")+theme+theme(legend.position='none') #select.var = list(contrib = 10) (top 10 de variables de mayor contribución)
+fviz_mca_var(admin.mca, col.var= "cos2",invisible="quali", repel=TRUE, gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"))+theme#tmb se podría colorear por contribución
+
+# Análisis de correlación entre variables y dimensiones 1 y 2 de MCA
+fviz_mca_var(admin.mca, choice = "mca.cor",invisible="quali", repel = TRUE, ggtheme = theme)
+ 
+# Análisis de contribución de variables a dimensión 1
+fviz_contrib(admin.mca,choice="var",axes=1, fill="royalblue",color ="black")+ theme(axis.text.x = element_text(angle=0)) + theme + labs(title = 'Contribución de variables',  x = 'Variables', y = 'Contribución (%)')
+
+# Análisis de contribución de variables a dimensiones 1 y 2
+fviz_contrib(admin.mca,choice="var",axes=1:2, fill="royalblue",color ="black")+ theme(axis.text.x = element_text(angle=0)) + theme + labs(title = 'Contribución de variables',  x = 'Variables', y = 'Contribución (%)')
+```
+
+#### Análisis de individuos
+```{r data1 mca graficos4, warning=F}
+# Análisis de individuos
+fviz_mca_ind(admin.mca, label="none", col.ind = "contrib",gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),invisible="quali")+theme  
+
+# Análisis de individuos según género
+fviz_mca_ind(admin.mca, label="none", habillage='Gender',invisible="quali")+theme
+
+# Análisis de individuos según más de una variable
+fviz_ellipses(admin.mca, c("Gender", "Dept"),geom = "point")+theme
+```
+
+
+## 2) Ejemplo 2
+
+_*Análisis de Audiencias*_
+
+_Tabla de contingencia de preferencias de audiencia de Neilsen Media para la semana del 6 de Noviembre de 1995_
+
+### Preparo datos 
+```{r data2}
+# Cargo datos
+data("TV", package = "vcdExtra") # es un array
+# Lo paso a dataframe
+dfTV <- as.data.frame.table(TV)
+dfTV <- dfTV %>% arrange(Day)
+dfTV
+# Paso horarios a horas enteras
+levels(dfTV$Time) <- rep(c("8", "9", "10"), c(4,4,3))
+# Expando tabla de frecuencias a filas individuales 
+TV2 <- dfTV[rep(1:nrow(dfTV), dfTV[,4]),-4]
+TV2
+rownames(TV2) <- NULL
+```
+
+### Aplico MCA 
+```{r data2 mca}
+# Análisis de correspondencias Múltiple
+TV2.mca <- MCA(TV2, graph = FALSE)
+# Resúmen de MCA
+summary(TV2.mca)
+```
+
+### Gráficos MCA 
+
+#### Screeplot 
+```{r data2 mca graficos1}
+#scree plot
+fviz_screeplot(TV2.mca, addlabels = TRUE)+theme
+```
+
+#### Análisis de variables 
+```{r data2 mca graficos2}
+# Análisis de variables
+colores=as.character(c(1,1,1,1,1,3,3,3,2,2,2))
+# biplot variables
+fviz_mca_var(TV2.mca, col.var=colores,invisible="quali")+theme+theme(legend.position='none')
+fviz_mca_var(TV2.mca, col.var= "contrib",invisible="quali", repel=TRUE, gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"))+theme
+# Análisis de correlación entre variables y dimensiones 1 y 2 de MCA
+fviz_mca_var(TV2.mca, choice = "mca.cor",invisible="quali", repel = TRUE, ggtheme = theme)
+# Análisis de contribución de variables a dimensión 1
+fviz_contrib(TV2.mca,choice="var",axes=1, fill="royalblue",color ="black")+ theme(axis.text.x = element_text(angle=0)) + theme + labs(title = 'Contribución de variables',  x = 'Variables', y = 'Contribución (%)')
+# Análisis de contribución de variables a dimensiones 1 y 2
+fviz_contrib(TV2.mca,choice="var",axes=1:2, fill="royalblue",color ="black")+ theme(axis.text.x = element_text(angle=0)) + theme + labs(title = 'Contribución de variables',  x = 'Variables', y = 'Contribución (%)')
+```
+
+Hay una correspondencia entre NBC y los jueves, y constituye gran parte de la inercia explicada en la dimensión 1. 
+
+```{r analisis 1}
+tablaTV <- xtabs(Freq~Day+Time+Network, dfTV)
+tablaTV
+margin.table(tablaTV, 1)
+# el jueves es donde mayor cantidad de expectadores hay
+margin.table(tablaTV, c(1, 3)) 
+# en particular, están concentrados en NBC (sólo ese día)
+
+margin.table(tablaTV, c(2)) 
+# El horario de las 9 es el más visto
+# Se agrupa más que los días lunes, martes, miércoles y viernes que los otros horarios
+
+tablaTV[4,,] #DIA JUEVES
+
+# Volviendo al biplot, se ve que las emisoras que no son NBC aportan más a la dim2 que a la 1.
+# Esto pasa porque la dim 1 captura más la inercia debido a NBC
+# Entonces la dimensión 2 captura el resto de la inercia y las diferencias entre ABC y CBS en las otras noches
+```
+
+Se utiliza la función structable(), para crear una nueva variable que combine hora y día. Esto permite mayor flexibilidad. El gráfico resultante tiene un punto por cada horario en la semana. 
+
+#### Reestructuración de datos
+```{r data2 combinado}
+# Flatten de acuerdo al análisis requerido
+TV3 <- as.matrix(structable(Network~Time+Day, tablaTV))
+TV3
+# expando tabla de frecuencias
+dfTV3 <- as.data.frame(TV3)
+dfTV3$combinacion <- rownames(dfTV3)
+rownames(dfTV3) <- NULL
+dfTV3 <- pivot_longer(dfTV3, cols=c(1:3),names_to='emisora',values_to='audiencia' )
+# expando tabla de frecuencias
+dfTV3 <- as.data.frame(dfTV3)
+TV3_exp <- dfTV3[rep(1:nrow(dfTV3), dfTV3[,3]),-3]
+head(TV3_exp)
+```
+
+#### Aplico MCA combinado
+```{r data2 mca combinado}
+# Análisis de correspondencias Múltiple
+TV3.mca <- MCA(TV3_exp, graph = FALSE)
+```
+
+### Gráficos MCA combinado
+
+#### Screeplot 
+```{r data2 mca combinado1}
+#scree plot
+fviz_screeplot(TV3.mca, addlabels = TRUE)+theme
+```
+
+#### Análisis de variables 
+```{r data2 mca combinado2}
+colores1 <- as.character(c(3,1,2,4,5,3,1,2,4,5,3,1,2,4,5,6,6,6))
+
+# Análisis de MCA - variables
+fviz_mca_var(TV3.mca,col.var = colores1,invisible="quali")+theme+theme(legend.position='none')
+
+# Análisis de MCA - variables coloreado según contribución
+fviz_mca_var(TV3.mca, col.var= "contrib",invisible="quali", repel=TRUE, gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"))+theme
+
+# Análisis de correlación entre variables y dimensiones 1 y 2 de MCA
+fviz_mca_var(TV3.mca, choice = "mca.cor",invisible="quali", repel = TRUE, ggtheme = theme)
+
+# Análisis de contribución de variables a dimensión 1
+fviz_contrib(TV3.mca,choice="var",axes=1, fill="royalblue",color ="black")+ theme(axis.text.x = element_text(angle=45)) + theme + labs(title = 'Contribución de variables',  x = 'Variables', y = 'Contribución (%)')
+
+# Análisis de contribución de variables a dimensiones 1 y 2
+fviz_contrib(TV3.mca,choice="var",axes=1:2, fill="royalblue",color ="black")+ theme(axis.text.x = element_text(angle=45)) + theme + labs(title = 'Contribución de variables',  x = 'Variables', y = 'Contribución (%)')
+```
+
+8pm, Monday, CBS
+9pm datos agrupados alrededor de ABC.
+
+## 3) Ejemplo 3
+
+_*Análisis de consumo de te*_
+
+_Cuestionario realizado a 300 personas sobre el consumo de te, la percepción al producto y detalles personales_
+
+### Preparo datos 
+```{r data3}
+# Importo datos
+data(tea)
+# selecciono sólo algunas variables de la bd "tea"
+tea <- tea %>% select(c("Tea", "How", "how", "sugar", "where", "always"))
+head(tea)
+```
+
+### Aplico MCA
+```{r data3 mca}
+# MCA 
+tea_mca <- MCA(tea, graph = FALSE) #quanti.sup, quali.sup son parámetros que se le pueden dar a la función
+# representan vectores de variables categóricas o numéricas suplementarias
+
+# Resumen MCA
+summary(tea_mca, ncp=2) # sólo veo las 2 primeras dimensiones (ncp)
+
+# Descripción de las dimensiones
+
+#For the categorical variables, an anova model with one factor is done for each dimension; the coordinates of the individuals are explained by the categorical variable.A F-test is derived to see whether the variable has an influence on the dimension and T-tests are done category by category (with the contrast sum alpha_i=0). We can see if the coordinates of the individuals of the sub-population defined by one category are significantly different from the overall (i.e. different from 0). The variables and the categories are sorted by p-value and only the significant ones are kept.
+
+dimdesc(tea_mca)
+```
+
+### Gráficos MCA 
+
+#### Screeplot 
+```{r data3 mca graficos1}
+# scree plot
+fviz_screeplot(tea_mca, addlabels = TRUE)+theme
+```
+
+#### Biplot 
+```{r data3 mca graficos2, warning=F}
+# Biplot de variables y rows
+colores_te <- as.character(c(1,1,1,2,2,2,2,3,3,3,4,4,5,5,5,6,6))
+fviz_mca_biplot(tea_mca, col.var=colores_te, repel = TRUE, ggtheme = theme, col.ind='gray90',invisible="quali")+theme(legend.position='none')
+```
+
+#### Análisis de variables
+```{r data3 mca graficos3}
+# Análisis de variables 
+fviz_mca_var(tea_mca, col.var= "contrib",invisible="quali", repel=TRUE, gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"))+theme
+# Análisis de correlación entre variables y dimensiones 1 y 2 de MCA
+fviz_mca_var(tea_mca, choice = "mca.cor",invisible="quali", repel = TRUE, ggtheme = theme)
+# Análisis de contribución de variables a dimensión 1
+fviz_contrib(tea_mca,choice="var",axes=1, fill="royalblue",color ="black")+ theme(axis.text.x = element_text(angle=45)) + theme + labs(title = 'Contribución de variables',  x = 'Variables', y = 'Contribución (%)')
+# Análisis de contribución de variables a dimensiones 1 y 2
+fviz_contrib(tea_mca,choice="var",axes=1:2, fill="royalblue",color ="black")+ theme(axis.text.x = element_text(angle=45)) + theme + labs(title = 'Contribución de variables',  x = 'Variables', y = 'Contribución (%)')
+```
+
+## 4) Ejemplo 4
+
+_*Análisis de intoxicación*_
+
+_Cuestionario realizado a niños en edad escolar que se intoxicaron. Se les preguntó por sus síntomas y el alimento que habían ingerido._
+
+### Preparo datos 
+```{r MCA data4}
+# Importo datos
+data(poison)
+head(poison)
+
+# Selecciono columnas de síntomas - alimentos (+/- sickness) 
+intoxicacion <- poison %>% select (5:15)
+summary(intoxicacion)[, 1:4]
+```
+
+### Aplico MCA 
+```{r data4 mca}
+# MCA
+intoxicacion_mca <- MCA(intoxicacion, graph = FALSE)
+```
+
+#### Screeplot 
+```{r data4 mca graficos1}
+# scree plot
+fviz_screeplot(intoxicacion_mca, addlabels = TRUE)+theme
+```
+
+#### Biplot 
+```{r data4 mca graficos2}
+# Biplot de variables y rows
+colores_toxi <- as.character(c(1,2,1,2,1,2,1,2,1,2,1,2,3,4,3,4,3,4,3,4,3,4))
+fviz_mca_biplot(intoxicacion_mca,col.var=colores_toxi,label="var",invisible="quali",repel = TRUE, ggtheme = theme,col.ind='gray')+theme(legend.position='none')
+
+```
+
+#### Análisis de variables
+```{r data4 mca graficos3, warning=F}
+# Análisis de variables
+fviz_mca_var(intoxicacion_mca, repel = TRUE,invisible="quali", ggtheme = theme,alpha.var="cos2")
+colores_toxi1 <- as.character(c(1,1,1,1,1,3,3,3,3,3,3))
+fviz_mca_var(intoxicacion_mca, col.var=colores_toxi1,choice = "mca.cor",invisible="quali", repel = TRUE, ggtheme = theme)+theme(legend.position='none')
+# Contribución de variables a la dimensión 1
+fviz_contrib(intoxicacion_mca, choice = "var", axes = 1, top = 15)+theme
+# Contribución de variables a la dimensión 2
+fviz_contrib(intoxicacion_mca, choice = "var", axes = 2, top = 15)+theme
+# Contribución de variables a las dimensiones 1 y 2
+fviz_contrib(intoxicacion_mca, choice = "var", axes = 1:2, top = 15)+theme
+```
+
+#### Análisis de individuos
+```{r data4 mca graficos4, warning=F}
+# Análisis de individuos
+fviz_mca_ind(intoxicacion_mca, col.ind = "cos2", gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),repel = TRUE, ggtheme = theme)
+
+# Contribución de los individuos a las dimensiones 1 y 2 
+fviz_contrib(intoxicacion_mca, choice = "ind", axes = 1:2, top = 20)+theme
+
+# Representación de individuos
+fviz_mca_ind(intoxicacion_mca, label = "none",invisible="quali",habillage = "Vomiting", palette = c("#00AFBB", "#E7B800"),addEllipses = TRUE, ellipse.type = "confidence", ggtheme = theme) # habillage puede ser pasado como nombre o índice de la variable, o como vector externo df$columna
+# habillage = index of the column to be used as grouping variable
+
+# Representación de individuos según variable
+fviz_ellipses(intoxicacion_mca, 1:4, geom = "point")+theme
+```
+
+
+## 5) Ejemplo 5
+
+_*Análisis de Supervivencia, Titanic*_
+
+_Base de datos de pasajeros del Titanic según género, edad, supervivencia y clase del ticket de embarque._
+
+### Preparo datos 
+```{r MCA data5}
+# Importo datos
+data("Titanic")
+
+# Paso a data frame
+titanic <- as.data.frame(Titanic)
+
+# Expando la tabla de frecuencias
+titanic <- titanic[rep(1:nrow(titanic), titanic[,5]),-5]
+
+# Reseteo nombre de filas
+rownames(titanic) <- NULL
+
+head(titanic)
+```
+
+#### Análisis de Matriz de Burt
+```{r data5 Burt}
+# Armo matriz de Burt
+burt <- burtTable(titanic)
+burt
+
+#Grafico matriz de Burt
+burt2 <- as.table(as.matrix(burt))
+balloonplot((burt2), main='Matriz de Burt de datos Titanic', label=F, show.margins = F,dotcolor="pink", text.size=0.7,colsrt=45,colmar=2.5)
+```
+
+#### Aplico MCA 
+```{r data5 mca}
+titanic_mca <- MCA(titanic, graph=F)
+summary(titanic_mca)
+```
+
+#### Screeplot
+```{r data5 mca grafico1}
+fviz_screeplot(titanic_mca, addlabels = TRUE)+theme
+```
+
+#### Biplot
+```{r data5 mca grafico2}
+colores_t=as.character(c(1,1,1,1,2,2,4,4,3,3))
+fviz_mca_biplot(titanic_mca, label="var",repel = TRUE, ggtheme = theme,col.ind='gray', col.var=colores_t,invisible="quali")
+```
+
+#### Análisis de variables
+```{r data5 mca grafico3}
+# Análisis de variables según representatividad
+fviz_mca_var(titanic_mca,invisible="quali", repel = TRUE, ggtheme = theme,alpha.var="cos2")
+
+# Análisis de variables según correlación con dimensiones 1 y 2
+fviz_mca_var(titanic_mca,invisible="quali", choice = "mca.cor", repel = TRUE, ggtheme = theme)
+
+# Análisis de variables según contribución a dimensión 1 
+fviz_contrib(titanic_mca, choice = "var", axes = 1, top = 15)+theme
+
+# Análisis de variables según contribución a dimensión 2
+fviz_contrib(titanic_mca, choice = "var", axes = 2, top = 15)+theme
+
+# Análisis de variables según contribución a dimensiones 1 y 2 
+fviz_contrib(titanic_mca, choice = "var", axes = 1:2, top = 15)+theme
+```
+
+#### Análisis de individuos
+```{r data5 mca grafico4, warning=F}
+# Anállisis de individuos
+fviz_mca_ind(titanic_mca,invisible="quali", col.ind = "cos2", gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),repel = TRUE, ggtheme = theme)
+```
+
+#### Reestructuración de datos
+```{r data5 combinado}
+# Flatten a 2-D, paso a dataframe y reseteo índice de filas
+Titanic_2D <- as.matrix(structable(Class+Survived~Sex+Age, Titanic))
+df_t2D <- as.data.frame(Titanic_2D)
+df_t2D$combinacion <- rownames(df_t2D)
+rownames(df_t2D) <- NULL
+# Expando dataframe
+df_t2D <- pivot_longer(df_t2D, cols=c(1:8),names_to='sobrevivió',values_to='valores' )
+df_t2D <- as.data.frame(df_t2D)
+df_t2D_exp <- df_t2D[rep(1:nrow(df_t2D), df_t2D[,3]),-3]
+rownames(df_t2D_exp) <- NULL
+```
+
+#### Aplico MCA combinado
+```{r data5 mca combinado}
+Tit2.mca <- MCA(df_t2D_exp, graph = FALSE)
+summary(Tit2.mca)
+```
+
+#### Screeplot
+```{r data5 mca combinado grafico1}
+#scree plot
+fviz_screeplot(Tit2.mca, addlabels = TRUE)+theme
+```
+
+#### Análisis de variables
+```{r data5 mca combinado grafico2}
+# Análisis de variables
+colorest1 <- as.character(c(3,3,3,3,2,1,2,1,2,1,2,1))
+fviz_mca_var(Tit2.mca,invisible="quali", col.var=colorest1)+theme+theme(legend.position='none')
+fviz_mca_var(Tit2.mca, col.var= "contrib",invisible="quali", repel=TRUE, gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"))+theme
+
+# Análisis de contribución de variables a dimensión 1
+fviz_contrib(Tit2.mca,choice="var",axes=1, fill="royalblue",color ="black")+ theme(axis.text.x = element_text(angle=45)) + theme + labs(title = 'Contribución de variables',  x = 'Variables', y = 'Contribución (%)')
+
+# Análisis de contribución de variables a dimensiones 1 y 2
+fviz_contrib(Tit2.mca,choice="var",axes=1:2, fill="royalblue",color ="black")+ theme(axis.text.x = element_text(angle=45)) + theme + labs(title = 'Contribución de variables',  x = 'Variables', y = 'Contribución (%)')
+```
