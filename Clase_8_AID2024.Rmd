@@ -1,0 +1,382 @@
+---
+title: "Clase 8: Técnicas de análisis bivariado"
+author: "Práctico AID 2024"
+date: "18/05/2024"
+output:
+  html_document:
+    toc: yes
+    toc_float: yes
+    df_print: paged
+---
+
+# Técnicas de análisis bivariado
+
+Cuando se busca comparar diferencias entre dos poblaciones, es crucial seleccionar el método de análisis adecuado. 
+
+Los métodos **paramétricos** asumen ciertas distribuciones subyacentes en los datos, mientras que los métodos **no paramétricos** no requieren tales suposiciones y son más flexibles en términos de distribución de los datos.
+
+<br/>
+
+**Pruebas paramétricas:**
+
+Las pruebas paramétricas hacen inferencias poderosas sobre la población basadas en datos de muestra. Pero para usarlas, se deben cumplir algunas suposiciones, y solo se pueden usar algunos tipos de variables. *Si tus datos violan estas suposiciones, puedes realizar transformaciones de datos apropiadas * ***o usar pruebas no paramétricas alternativas en su lugar.***
+
+- Un test t es para exactamente 1 o 2 grupos cuando la muestra es pequeña (30 o menos).
+- Un test z es para exactamente 1 o 2 grupos cuando la muestra es grande.
+- Un test ANOVA es para 3 o más grupos (clase 9).
+
+Las pruebas z y t tienen subtipos basados en el número y tipos de muestras y las hipótesis:
+
+Si tenemos mediciones emparejadas (diseño dentro de sujetos), se usa un test de muestras dependientes (pareadas).
+Si tenemos mediciones completamente separadas de dos grupos no emparejados (diseño entre sujetos), se usa un test de muestras independientes (no pareadas).
+
+Si se espera una diferencia entre grupos en una dirección específica, se usa un test de una cola.
+Si no tenemos expectativas sobre la dirección de una diferencia entre grupos, se usa un test de dos colas.
+
+<br/>
+
+**Pruebas no paramétricas:**
+
+Las pruebas no paramétricas se usan cuando no se cumplen los supuestos necesarios para realizar test paramétricos.
+La elección del método a utilizar dependerá del tamaño de la muestra, los tipos de datos, el diseño del estudio y la interpretación de los resultados.
+
+Entre los métodos no paramétricos están:
+
+- Test de medianas
+- Test de Mann-Whitney U
+- Test de Wilcoxon de rangos con signo
+- Test de la suma de rangos de Wilcoxon
+- Test de Kolmogorov-Smirnov (no la vamos a ver en esta clase).
+
+<br/>
+<br/>
+
+Test estadísticos
+![-](/Users/FR/Documents/Burocrático/DOCENCIA/MATERIAS/8_AID/2024/clase_8/Clase_8_AID2024.png)
+
+
+```{r setup, warning=F, message=F, warn.conflicts=FALSE}
+library(tidyverse)
+library(BSDA)
+library(car)
+library(datarium)
+library(reshape2)
+library(openintro) 
+library(RVAideMemoire)# Paquete que contiene funciones misceláneas útiles en bioestadística
+```
+
+## Test paramétricos
+
+### z-test
+
+- Muestras aleatorias e independientes
+- Muestras con distribución normal
+- Muestras con n >30 y asumo que por TCL la media tenderá a una distribución normal
+- Varianzas poblacionales conocidas (e iguales --> homocedasticidad)
+
+<br/>
+
+- **Cargo data**
+
+El dataset “births” del paquete openintro contiene información sobre 150 nacimientos junto con información de las madres. Se quiere determinar si existen evidencias significativas de que el peso (en libras) de los recién nacidos cuyas madres fuman difiere de aquellos cuyas madres no fuman. Se considerarán sólo los casos con peso no inferior a 5 libras (aprox. 2.27 kg) para analizar muestras normales.
+
+```{r data0}
+
+data(births) 
+head(births,4)
+```
+
+<br/>
+
+- **Análisis exploratorio**
+
+```{r exploratorio0}
+births2<-births[which(births$weight>=5),]
+births2 <- rbind(births2,births2) ## OJO !! sólo con fines didácticos: estoy duplicando la data para que las diferencias me den signif
+data_f <- subset(births2, smoke =='smoker')$weight
+data_nf <- subset(births2, smoke =='nonsmoker')$weight
+
+M_f<-mean(data_f)
+M_nf<-mean(data_nf)
+sd_f<-sd(data_f)
+sd_nf<-sd(data_nf)
+
+boxplot(weight~smoke,data=births2,xlab="Grupo",ylab="Peso",col="royalblue",border="darkblue")
+```
+
+
+- **Chequeo Normalidad**
+
+```{r norm1}
+# Testeo normalidad
+shapiro.test(data_f) # No rechazo
+qqPlot(data_f)
+shapiro.test(data_nf) # No rechazo
+qqPlot(data_nf)
+```
+<br/>
+
+*Chequeo homocedasticidad*
+
+```{r levene0}
+leveneTest(weight ~ smoke, data = births2)
+```
+<br/>
+
+*Planteo de Hipótesis:*
+
+Ho:$\mu_{fum} - \mu_{no fum} = 0$  
+
+Ha:$\mu_{fum} - \mu_{no fum} \neq 0$ 
+
+<br/>
+
+- **Test estadístico**
+
+```{r hip00}
+z.test(data_f,data_nf, mu=0, alternative= "two.sided", sigma.x=sd_f, sigma.y=sd_nf) 
+
+```
+
+**CONCLUSIONES:** Existe suficiente evidencia para rechazar la Ho (las medias eran iguales).
+
+<br/>
+
+### t-test
+
+- Muestras aleatorias e independientes
+- Muestras con distribución normal
+- Muestras con n <30 
+- Varianzas poblacionales desconocidas 
+
+<br/>
+
+Se utilizará una base de datos de R que muestra el efecto de dos medicamentos somníferos sobre las horas de sueño en 10 pacientes (aumento del tiempo de sueño = extra).
+
+```{r data1}
+# Carga de datos
+data("sleep")
+head(sleep)
+```
+
+<br/>
+
+- **Análisis exploratorio**
+
+```{r exploratorio1}
+boxplot(extra~group,data=sleep,xlab="Grupo",ylab="Extra hrs de sueño",col="royalblue",border="darkblue")
+```
+<br/>
+
+- **Chequeo Normalidad**
+
+```{r norm0}
+# Testeo normalidad
+shapiro.test(subset(sleep, group ==1)$extra) # No rechazo
+shapiro.test(subset(sleep, group ==2)$extra) # No rechazo
+```
+<br/>
+
+*Planteo de Hipótesis:*
+
+- ct = control (grupo 1)
+
+- tt = somnífero (grupo 2)
+
+<br/>
+
+Ho:$\mu_{tt} - \mu_{ct} = 0$  
+
+Ha:$\mu_{tt} - \mu_{ct} > 0$ (tratamiento con somníferos aumenta el tiempo de sueño)
+
+<br/>
+
+*¿Conocemos las varianzas poblacionales?*
+
+- Hipótesis para las varianzas poblacionales
+
+Ho $\frac{\sigma^2_{ct}}{\sigma^2_{cs}} =1$ (son iguales)
+
+H1 $\frac{\sigma^2_{ct}}{\sigma^2_{cs}} \neq 1$ (distintas)
+
+```{r hip1}
+var.test(extra~group,data=sleep, alternative = "two.sided") # es una prueba bilateral (también podría utilizar levene)
+```
+_Como el p-valor es > 0.05 no se rechaza Ho (varianzas iguales)._
+
+<br/>
+
+Vuelvo a las Hipotesis de problema:
+
+Ho:$\mu_{ct} - \mu_{tt} = 0$ 
+
+Ha:$\mu_{ct} - \mu_{tt} < 0$
+
+<br/>
+
+Con el parámetro `var.equal` se especifica si las varianzas de las poblaciones son similares o no, por ejemplo `var.equal= T` indica que las varianzas de ambas poblaciones son iguales.
+
+En `alternative` se especifica el tipo de prueba de hipótesis.
+
+
+<br/>
+
+- **Test estadístico**
+
+```{r hip2}
+t.test(extra ~ group, data = sleep, alternative = "less", var.equal = T) #varianzas poblacionales iguales (el resultado fue de esa prueba de varianzas fue p > 0.05, no significativo, entonces no se rechaza Ho)
+```
+
+Si se desea obtener el límite inferior y superior del intervalo de confianza, debe correrse nuevamente la prueba, pero seleccionando la opción bilateral (`alternative= two.sided`)
+
+<br/>
+
+**CONCLUSIONES:** El p-valor de la prueba es < 0.05 por lo que entonces se rechaza la Ho. Se concluye que la diferencia de medias es negativa (es decir, el tratamiento tiene una media mayor que la situación control).
+
+<br/>
+<span style="color:blue"> Variantes de este test:</span> 
+
+<span style="color:blue">1 - que las varianzas hubieran sido distintas (en cuyo caso se corre test de Welch. La sintaxis es igual, sólo se cambia **var.equal=F**.</span>
+
+<span style="color:blue">2- que la hipótesis propuesta fuera que las medias eran iguales, o que la diferencia era mayor. La sintaxis es igual, sólo se cambia el valor del parámetro **alternative** </span>
+
+
+<br/>
+
+### Muestras pareadas
+
+Se utiliza una base de datos de la librería _datarium_, en donde se registra el peso de unos ratones antes y después de un tratamiento.
+
+```{r data2}
+data("mice2", package = "datarium")
+head(mice2, 3)
+```
+
+<br/>
+
+- **Análisis exploratorio**
+```{r exploratorio2}
+mice2.long <- mice2 %>% gather(key = "group", value = "weight", before, after)
+mice2.long$group <- factor(mice2.long$group,levels=c('before','after'))
+head(mice2.long, 3)
+boxplot(weight~group,data=mice2.long,xlab="Grupo",ylab="Peso",col="royalblue",border="darkblue")
+```
+
+- **Planteo de Hipótesis**
+
+$X_d=$ Diferencia en el peso de ratones antes y después del tratamiento
+
+Hipotesis
+
+d= diferencia (peso después - peso antes)
+
+Ho $\mu_d = 0$
+
+Ha $\mu_d > 0$
+
+```{r dif2}
+mice2 <-mice2 %>% mutate(diferencia= after-before)
+```
+
+
+<br/>
+
+- **Chequeo Normalidad**
+```{r norm2}
+qqPlot(mice2$diferencia)
+```
+<br/>
+
+- **Test estadístico**
+
+Prueba t para muestras pareadas
+
+_mismos datos, 2 alternativas equivalentes_
+
+```{r hip2_2a}
+t.test(Pair(mice2$after, mice2$before) ~ 1, alternative = "greater", data = mice2)
+# Ho = peso después (after) - peso antes (before) son iguales
+# Ha = diferencia es mayor
+```
+
+```{r hip2_2b}
+t.test( mice2.long$weight ~  mice2.long$group, alternative = "less", paired=T)
+```
+
+<br/>
+
+**CONCLUSIONES:** Existe suficiente evidencia para rechazar Ho en favor de Ha.
+
+
+<br/>
+
+## Pruebas no paramétricas
+
+<br/>
+
+### Test de Mann-Whitney-Wilcoxon
+
+Se utilizan datos de un estudio efectuado que analiza la calidad y producción de aceite de oliva en la provincia de Catamarca de la República Argentina. Para ello se estudiaron dos de las variedades más conocidas.
+Se tomaron muestras de aceitunas de distintos ejemplares a una misma altura de copa de aproximadamente dos metros, y de todos los puntos cardinales de la misma, a efectos de evitar las variaciones debidas a la posición del fruto en la planta. Las aceitunas fueron secadas en estufa y se les determinó su contenido porcentual de aceite por extracción química.
+
+```{r data3}
+# Cargamos los datos
+
+Arbequina=c(34.5 , 20.1 , 21.8 , 18.2 , 19.5 , 20.2 , 22.5 , 23.9 , 22.1 , 24.2 )
+Carolea=c(16.4 , 14.8 , 17.8 , 12.3 , 11.9 , 15.5 , 13.4 , 16, 15.8 , 16.2 )
+```
+
+<br/>
+
+- **Chequeo Normalidad**
+
+```{r norm3}
+shapiro.test(Arbequina) # Testea la normalidad de los datos --> RECHAZA
+shapiro.test(Carolea) # Testea la normalidad de los datos
+```
+<br/>
+
+- **Análisis Exploratorio**
+
+```{r reshape}
+myList <-list(Arbequina, Carolea)
+names(myList) <- c('Arbequina', 'Carolea')
+df <- melt(myList, value.name= 'Rendimiento')
+
+boxplot(Rendimiento~factor(L1),data=df,xlab="Especie",ylab="Contenido aceite",col="royalblue",border="darkblue")
+```
+<br/>
+
+- **Planteo de Hipótesis**
+
+$\theta_A$ a la mediana poblacional (posición central) del contenido de aceite de la variedad Arbequina.
+
+$\theta_C$ a la mediana poblacional (posición central) del contenido de aceite de la variedad Carolea.
+
+Hipótesis
+
+Ho $\theta_A = \theta_C$
+
+Ha $\theta_A \neq \theta_C$
+
+<br/>
+
+- **Test estadístico**
+
+```{r}
+wilcox.test(Arbequina, Carolea, alternative = "two.sided")
+```
+
+<br/>
+
+### Test para la mediana
+
+<br/>
+
+- **Test estadístico**
+```{r}
+mood.medtest(Rendimiento~L1, data=df)# Realiza el test de la mediana de Mood
+```
+
+Concluimos que rechazamos la hipótesis de la igualdad de las medianas de las dos variedades.
+
