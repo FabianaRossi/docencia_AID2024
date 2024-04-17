@@ -1,0 +1,424 @@
+---
+title: "Clase 9: Técnicas de análisis bivariado 2"
+author: "Práctico AID 2024"
+date: "01/06/2024"
+output:
+  html_document:
+    toc: yes
+    toc_float: yes
+    df_print: paged
+---
+
+# Introducción
+
+Cuando se busca comparar diferencias en una variable entre 3 o más poblaciones, es crucial seleccionar el método de análisis adecuado. 
+
+Los métodos **paramétricos** asumen ciertas distribuciones subyacentes en los datos, mientras que los métodos **no paramétricos** no requieren tales suposiciones y son más flexibles en términos de distribución de los datos.
+
+En esta clase veremos algunos de los siguientes tests:
+
+
+![-](/Users/FR/Documents/Burocrático/DOCENCIA/MATERIAS/8_AID/2024/clase_9/Clase_9_AID2024.png){width=250, height=400}
+
+
+```{r setup, warning=F, message=F, warn.conflicts=FALSE}
+library(tidyverse)
+library(car)
+library(pgirmess)
+library(MASS)
+library(nortest)
+library(moments)
+```
+
+<br/>
+
+## **Pruebas paramétricas**
+
+Las pruebas paramétricas hacen inferencias poderosas sobre la población basadas en datos de muestra. Pero para usarlas, se deben cumplir algunas suposiciones, y solo se pueden usar algunos tipos de variables. *Si tus datos violan estas suposiciones, puedes realizar transformaciones de datos apropiadas * ***o usar pruebas no paramétricas alternativas en su lugar.***
+
+<br/>
+
+**ANOVA**
+
+- Un test *ANOVA* se utiliza para comparar la media de una variable para 3 o más grupos. 
+
+La hipótesis nula en este test es que la media de la variable estudiada es la misma en los diferentes grupos, en contraposición a la hipótesis alternativa de que al menos dos medias difieren de forma significativa. ANOVA permite comparar múltiples medias, pero lo hace mediante el estudio de las varianzas.
+
+        - H0 : No hay diferencias entre las medias de los diferentes grupos : μ1=μ2...=μk=μ
+
+        - H1 : Al menos un par de medias son significativamente distintas la una de la otra.
+<br/>   
+**Supuestos**:
+
+- **Independencia:** Las observaciones deben ser aleatorias. Los grupos (niveles del factor), además, deben de ser independientes entre ellos.
+
+- La variable cuantitativa debe de distribuirse de forma **normal** en cada uno de los grupos, siendo menos estricta esta condición cuanto mayor sea el tamaño de cada grupo. La mejor forma de verificar la normalidad es estudiar los residuos de cada observación respecto a la media del grupo al que pertenecen. [Link](https://support.minitab.com/en-us/minitab/help-and-how-to/statistical-modeling/anova/supporting-topics/anova-models/does-the-response-need-to-be-normal/#:~:text=In%20ANOVA%2C%20the%20entire%20response,errors%20follow%20a%20normal%20distribution)
+
+- Varianza constante entre grupos (**homocedasticidad**): esto es así ya que en la hipótesis nula se considera que todas las observaciones proceden de la misma población, por lo que tienen la misma media y también la misma varianza. Esta condición es más importante cuanto menor es el tamaño de los grupos.
+
+El ANOVA es bastante robusto a la falta de homodedasticidad si el diseño es equilibrado (mismo número de observaciones por grupo). Si no se puede aceptar la homocedasticidad, se recurre a lo que se conoce como ANOVA heterodástica que emplea la corrección de Welch (Welch test), en R su función es oneway.test(). --> __no lo vamos a ver en esta clase__
+
+<br/>
+
+**Post-hoc tests:**
+
+Si un ANOVA tiene resultados significativo, entonces significa que al menos dos de las medias comparadas son significativamente distintas entre sí, pero no se indica cuáles.
+
+Para ello, es necesario realizar pruebas a posteriori como Bonferroni, Holm-Bonferroni, Tukey o Dunnett.   
+
+Cuantas más comparaciones se hagan, más aumenta la probabilidad de encontrar diferencias significativas. Por tal motivo, para comparaciones múltiples se suelen ajustar los niveles de significancia.
+
+<br/>
+
+
+### DATOS NORMALES
+
+- **Cargo data**
+
+Se quiere analizar el % de bateos exitosos de los jugadores de béisbol dependiendo de la posición en la que juegan.
+
+```{r data_anova}
+
+posicion <- c("OF", "IF", "IF", "OF", "IF", "IF", "OF", "OF", "IF", "IF", "OF", "OF", "IF", "OF", "IF", "IF", "IF", "OF", "IF", "OF", "IF", "OF", "IF", "OF", "IF", "DH", "IF", "IF", "IF", "OF", "IF", "IF", "IF", "IF", "OF", "IF", "OF", "IF", "IF", "IF", "IF", "OF", "OF", "IF", "OF", "OF", "IF", "IF", "OF", "OF", "IF", "OF", "OF", "OF", "IF", "DH", "OF", "OF", "OF", "IF", "IF", "IF", "IF", "OF", "IF", "IF", "OF", "IF", "IF", "IF", "OF", "IF", "IF", "OF", "IF", "IF", "IF", "IF", "IF", "IF", "OF", "DH", "OF", "OF", "IF", "IF", "IF", "OF", "IF", "OF", "IF", "IF", "IF", "IF", "OF", "OF", "OF", "DH", "OF", "IF", "IF", "OF", "OF", "C", "IF", "OF", "OF", "IF", "OF", "IF", "IF", "IF", "OF", "C", "OF", "IF", "C", "OF", "IF", "DH", "C", "OF", "OF", "IF", "C", "IF", "IF", "IF", "IF", "IF", "IF", "OF", "C", "IF", "OF", "OF", "IF", "OF", "IF", "OF", "DH", "C", "IF", "OF", "IF", "IF", "OF", "IF", "OF", "IF", "C", "IF", "IF", "OF", "IF", "IF", "IF", "OF", "OF", "OF", "IF", "IF", "C", "IF", "C", "C", "OF", "OF", "OF", "IF", "OF", "IF", "C", "DH", "DH", "C", "OF", "IF", "OF", "IF", "IF", "IF", "C", "IF", "OF", "DH", "IF", "IF", "IF", "OF", "OF", "C", "OF", "OF", "IF", "IF", "OF", "OF", "OF", "OF", "OF", "OF", "IF", "IF", "DH", "OF", "IF", "IF", "OF", "IF", "IF", "IF", "IF", "OF", "IF", "C", "IF", "IF", "C", "IF", "OF", "IF", "DH", "C", "OF", "C", "IF", "IF", "OF", "C", "IF", "IF", "IF", "C", "C", "C", "OF", "OF", "IF", "IF", "IF", "IF", "OF", "OF", "C", "IF", "IF", "OF", "C", "OF", "OF", "OF", "OF", "OF", "OF", "OF", "OF", "OF", "OF", "OF", "C", "IF", "DH", "IF", "C", "DH", "C", "IF", "C", "OF", "C", "C", "IF", "OF", "IF", "IF", "IF", "IF", "IF", "IF", "IF", "IF", "OF", "OF", "OF", "IF", "OF", "OF", "IF", "IF", "IF", "OF", "C", "IF", "IF", "IF", "IF", "OF", "OF", "IF", "OF", "IF", "OF", "OF", "OF", "IF", "OF", "OF", "IF", "OF", "IF", "C", "IF", "IF", "C", "DH", "OF", "IF", "C", "C", "IF", "C", "IF", "OF", "C", "C", "OF","IF","IF","IF","IF","IF","IF","IF","IF","IF","IF","OF","OF","OF","OF","OF","OF","OF","OF","OF","OF","OF","OF","OF","OF","OF","OF","OF","OF")
+
+bateo <- c(0.359, 0.34, 0.33, 0.341, 0.366, 0.333, 0.37, 0.331, 0.381, 0.332, 0.365, 0.345, 0.313, 0.325, 0.327, 0.337, 0.336, 0.291, 0.34, 0.31, 0.365, 0.356, 0.35, 0.39, 0.388, 0.345, 0.27, 0.306, 0.393, 0.331, 0.365, 0.369, 0.342, 0.329, 0.376, 0.397, 0.327, 0.354, 0.321, 0.37, 0.313, 0.341, 0.325, 0.312, 0.346, 0.34, 0.401, 0.372, 0.352, 0.354, 0.341, 0.365, 0.333, 0.378, 0.385, 0.287, 0.303, 0.334, 0.359, 0.352, 0.321, 0.323, 0.302, 0.349, 0.32, 0.356, 0.34, 0.393, 0.288, 0.339, 0.388, 0.283, 0.311, 0.391, 0.353, 0.42, 0.393, 0.347, 0.424, 0.378, 0.346, 0.355, 0.322, 0.341, 0.306, 0.329, 0.271, 0.32, 0.308, 0.322, 0.388, 0.351, 0.341, 0.31, 0.393, 0.411, 0.323, 0.37, 0.364, 0.321, 0.351, 0.329, 0.327, 0.390, 0.32, 0.353, 0.319, 0.319, 0.343, 0.288, 0.32, 0.338, 0.322, 0.303, 0.356, 0.303, 0.351, 0.325, 0.325, 0.361, 0.375, 0.341, 0.383, 0.328, 0.3, 0.277, 0.359, 0.358, 0.381, 0.324, 0.293, 0.324, 0.329, 0.294, 0.32, 0.361, 0.347, 0.317, 0.316, 0.342, 0.368, 0.319, 0.317, 0.302, 0.321, 0.336, 0.347, 0.279, 0.309, 0.358, 0.318, 0.342, 0.299, 0.332, 0.349, 0.387, 0.335, 0.358, 0.312, 0.307, 0.28, 0.344, 0.314, 0.24, 0.331, 0.357, 0.346, 0.351, 0.293, 0.308, 0.374, 0.362, 0.294, 0.314, 0.374, 0.315, 0.324, 0.382, 0.353, 0.305, 0.338, 0.366, 0.357, 0.326, 0.332, 0.323, 0.306, 0.31, 0.31, 0.333, 0.34, 0.38, 0.389, 0.308, 0.411, 0.278, 0.326, 0.335, 0.316, 0.371, 0.314, 0.384, 0.379, 0.32, 0.395, 0.347, 0.307, 0.326, 0.316, 0.341, 0.308, 0.327, 0.337, 0.36, 0.32, 0.372, 0.306, 0.305, 0.347, 0.281, 0.281, 0.296, 0.306, 0.343, 0.378, 0.393, 0.337, 0.327, 0.336, 0.32, 0.381, 0.306, 0.358, 0.311, 0.284, 0.364, 0.315, 0.342, 0.367, 0.307, 0.351, 0.372, 0.304, 0.296, 0.332, 0.312, 0.437, 0.295, 0.316, 0.298, 0.302, 0.342, 0.364, 0.304, 0.295, 0.305, 0.359, 0.335, 0.338, 0.341, 0.3, 0.378, 0.412, 0.273, 0.308, 0.309, 0.263, 0.291, 0.359, 0.352, 0.262, 0.274, 0.334, 0.343, 0.267, 0.321, 0.3, 0.327, 0.313, 0.316, 0.337, 0.268, 0.342, 0.292, 0.39, 0.332, 0.315, 0.298, 0.298, 0.331, 0.361, 0.272, 0.287, 0.34, 0.317, 0.327, 0.354, 0.317, 0.311, 0.214, 0.302, 0.302, 0.291, 0.29, 0.268, 0.352, 0.341, 0.265, 0.307, 0.36, 0.305, 0.254, 0.279, 0.321, 0.305, 0.35, 0.308, 0.326, 0.239, 0.23, 0.322, 0.405, 0.321, 0.291, 0.312, 0.357, 0.324, 0.251, 0.265, 0.249, 0.258, 0.244, 0.270, 0.261, 0.269, 0.270, 0.227, 0.361, 0.372, 0.38, 0.381, 0.385, 0.39, 0.372, 0.38, 0.381, 0.385, 0.39, 0.372, 0.38, 0.381, 0.385, 0.39, 0.372, 0.38)
+
+datos <- data.frame(posicion = posicion, bateo = bateo)
+head(datos,6)
+```
+<br/>
+
+- **Análisis exploratorio**
+
+```{r exploratorio0}
+boxplot(bateo~posicion,data=datos,xlab="Posición",ylab="% de bateo",col="royalblue",border="darkblue", main= 'Porcentaje de bateo según posición')
+
+```
+
+- **Chequeo normalidad**
+
+```{r normalidad0}
+# Creo dataframe vacío en donde voy a guardar el resultado de p-valor de la prueba de normalidad:
+result_df <- data.frame(porcentaje_level = unique(datos$posicion),
+                        pval_normalidad = numeric(length(unique(datos$posicion))))
+
+# Itero sobre cada nivel de posicion
+for (i in 1:length(unique(datos$posicion))) {
+  # Filtrado de la data según cada nivel
+  subset_data <- datos[datos$posicion == unique(datos$posicion)[i], ]
+  # Calculo el p-valor de la prueba de normalidad (Shapiro test)
+  p_val <- shapiro.test(subset_data$bateo)$p.value
+  # Guardo el valor de p val para cada nivel de bateo 
+  result_df$pval_normalidad[i] <- p_val
+  # Dibujo qqplot
+  qqPlot(subset_data$bateo, main= paste('posición=', unique(datos$posicion)[i]))
+}
+
+# Imprimo el resultado
+print(result_df)
+```
+
+**Conclusión NORMALIDAD**: No existe suficiente evidencia para rechazar la Ho del test de Normalidad (Shapiro, en este caso). Por ende, no se rechaza (para cada grupo) la hipótesis que dice que los datos siguen una distribución normal.
+
+<br/>
+
+- **Chequeo homocedasticidad**
+
+```{r levene1}
+leveneTest(bateo ~ posicion, data = datos) # Va a tirar un warning que dice que la variable de agrupamiento (en este caso posición) va a ser tratada como factor
+```
+**Conclusión HOMOCEDASTICIDAD**: No existe suficiente evidencia para rechazar la Ho del test de homogeneidad de varianzas (Levene, en este caso). 
+
+<br/>
+
+- **Test estadístico**
+
+```{r anova0}
+anova <- aov(datos$bateo ~ datos$posicion)
+summary(anova)
+
+shapiro.test(residuals(anova)) # chequeo normalidad de residuos
+```
+**Conclusión ANOVA**: En este caso el test de ANOVA dió un resultado significativo (pval < 0.01 = **), por lo cuál se rechaza la Ho (la media de la variable estudiada es la misma en los diferentes grupos).
+
+Para saber cuáles son los grupos que muestran diferencias se debe realizar un test _a posteriori_
+
+<br/>
+
+- **Post-test: TUKEY**
+
+```{r tukey0}
+TukeyHSD(anova)
+plot(TukeyHSD(anova))
+```
+
+
+**Conclusión TUKEY**: Dado que el test de ANOVA dió significativo, se realizó un test _a posteriori_ de Tukey para realizar comparaciones múltiples entre los distintos niveles de la variable posición. Los resultados indican que existen diferencias entre la posición OF y C, y la posición OF e IF.
+
+
+<br/>
+
+
+
+### DATOS TRANSFORMADOS
+
+Muchas veces, cuando los datos no siguen una distribución normal, se pueden realizar transformaciones sobre los mismos.
+
+La transformación **Box-Cox** es una técnica estadística utilizada para estabilizar la varianza y hacer que los datos se ajusten mejor a los supuestos de normalidad. 
+
+La idea básica detrás de este método es encontrar algún valor para λ de modo que los datos transformados sean lo más cercanos posible a una distribución normal, utilizando la siguiente fórmula:
+
+        y(λ) = (yλ – 1) / λ  if y ≠ 0
+        y(λ) = log(y)  if y = 0
+
+<br/>
+
+- **Cargo data**
+
+Con la intención de evaluar la eficacia de un medicamento en el nivel de alerta de unos pacientes, tres dosis (a, b, c) de un determinado fármaco se administraron a 18 sujetos. Se pide analizar la eficacia del medicamento.
+
+```{r data_t}
+dosis<-c(rep("a",6),rep("b",8),rep("c",4))
+alerta<-c(30,38,35,41,27,24,32,26,31,29,27,35,21,25,17,21,20,19)
+data<-data.frame(dosis,alerta)
+head(data,8)
+```
+
+<br/>
+
+- **Análisis exploratorio**
+
+```{r eda_t}
+boxplot(alerta~dosis,data=data,xlab="Dosis",ylab="Alerta",col="royalblue",border="darkblue", main= 'Alerta por dosis')
+```
+
+<br/>
+
+- **Test estadístico : ANOVA**
+
+Se realiza un test ANOVA para analizar diferencias en las medias.
+
+```{r anova_t}
+aov.data<-aov(alerta~dosis,data=data)
+summary(aov.data)
+```
+
+**CONCLUSIONES:** El test arroja un resultado significativo, por lo cuál se rechaza Ho.
+
+_Para que las conclusiones de este test sean válidas, es necesario que se cumplan los supuestos_
+
+<br/>
+
+- **Chequeo normalidad**
+
+Se realizará un chequeo de normalidad de los residuos mediante 3 test estadísticos (Shapiro, Anderson Darlin y Agostino), así como también mediante inspección visual del qqplot.
+
+```{r norm_t}
+shapiro.test(residuals(aov.data))
+ad.test(residuals(aov.data))
+agostino.test(residuals(aov.data))
+
+qqPlot(resid(aov.data), main= 'qqplot de la distribución de los residuos')
+
+```
+**Conclusiones NORMALIDAD:** El test arroja un resultado no significativo: no existe suficiente evidencia para rechazar Ho (distribución normal de los residuos).
+
+<br/>
+
+- **Chequeo homocedasticidad**
+
+A continuación se chequea homocedasticidad (homogeneidad de varianzas).
+
+```{r homocedasticidad_t}
+print('las varianzas son')
+tapply(data$alerta,data$dosis,var,na.rm=TRUE)
+```
+
+A simple vista, las varianzas son muy discímiles.
+
+
+```{r homocedasticidad_tt}
+bartlett.test(alerta,dosis)
+```
+
+```{r homocedasticidad_ttt}
+leveneTest(alerta~as.factor(dosis))
+```
+
+**IMPORTANTE:** Cuando el tamaño de la muestra es pequeño, puede ocurrir que incluso grandes desviaciones de la normal no se detecten. Lo contrario puede ocurrir cuando el tamaño de la muestra es grande (la más mínima desviación de la normalidad logra rechazar la hipótesis nula). 
+
+En este caso, al ser la muestra pequeña y el test de Bartlett sensible a las desviaciones de la normalidad, este test no detecta diferencia de varianzas (heterocedasticidad) en los niveles del factor (dosis). Por eso, es conveniente utilizar el test de Levene, el cual rechaza la homoscedasticidad, lo que indica que NO se cumple uno de los supuestos del ANOVA.
+
+<br/>
+
+Para resolver este problema, puede ser útil alguna transformación de **Box-Cox**:
+
+<br/>
+
+- **Transformación datos:**
+```{r boxcox}
+boxcox(alerta~dosis,data=data,plotit=TRUE) # el máximo se alcanza en lambda -1.
+```
+<br/>
+        
+        y(λ) = (yλ – 1) / λ  if y ≠ 0
+ 
+ <br/>
+ 
+- **Test estadístico: ANOVA de datos transformados**
+
+```{r anova_box}
+aov.data2 = aov(( alerta^(-1) - 1 / (-1) )~dosis,data=data)
+summary(aov.data2)
+```
+**Conclusiones ANOVA:** Existe suficiente evidencia para rechazar la hipótesis nula (todas las medias eran iguales). Existe al menos un grupo que difiere significativamente en su media a la media de algún otro grupo.
+ 
+ <br/>
+ 
+- **Chequeo normalidad**
+
+```{r anova_sup1}
+shapiro.test(residuals(aov.data2))
+```
+ 
+ <br/>
+ 
+**Conclusiones NORMALIDAD:** No se rechaza la Ho (normalidad).
+ 
+
+ <br/>
+ 
+- **Chequeo homocedasticidad**
+
+```{r anova_sup2}
+leveneTest(alerta^(-1)~as.factor(dosis),data=data)
+```
+ <br/>
+ 
+**Conclusiones homocedasticidad:** No se rechaza la homogeneidad de varianzas según Ho.
+
+ <br/>
+ 
+- **Post-tests: Tukey**
+
+```{r anova_sup3}
+TukeyHSD(aov.data2,conf.level=0.95)
+```
+
+**Conclusiones TUKEY:** Dado que el test de ANOVA arrojó un resultado significativo y se rechazó la Ho, se realiza un test _a posteriori_ de Tukey. El mismo indica que existen diferencias estadísticas significativas entre las medias de los grupos a - b y a - c.
+
+<br/>
+<br/>
+
+## **Pruebas no paramétricas**
+
+Las pruebas no paramétricas se usan cuando no se cumplen los supuestos necesarios para realizar test paramétricos.
+
+<br/>
+
+
+Test de **Kruskal Wallis**.
+
+El test de Kruskal-Wallis, también conocido como test H, es la alternativa no paramétrica al test ANOVA de una vía para datos no pareados. Se trata de una extensión del test de Mann-Whitney para más de dos grupos.
+
+En el test de Kruskal-Wallis se contrasta si las diferentes muestras están equidistribuidas y que por lo tanto pertenecen a una misma distribución (población). Bajo ciertas simplificaciones puede considerarse que el test de Kruskal-Wallis compara las medianas.
+
+        - H0: todas las muestras provienen de la misma población (distribución).
+
+        - HA: Al menos una muestra proviene de una población con una distribución distinta.
+<br/>   
+**Supuestos:**
+
+- **Homocedasticidad**: dado que la hipótesis nula asume que todos los grupos pertenecen a una misma población y que por lo tanto tienen las mismas medianas, es requisito necesario que todos los grupos tengan la misma varianza. Se puede comprobar con representaciones gráficas o con los test de Levenne o Barttlet.
+
+- **Misma distribución** para todos los grupos: la distribución de los grupos no tiene que ser normal pero ha de ser igual en todos (por ejemplo que todos muestren asimetría hacia la derecha).
+
+
+<br/>
+
+**Post-hoc tests:**
+
+
+Si el test de Kruskal-Wallis es significativo, entonces al menos dos grupos son significativamente diferentes, pero no sabemos cuales. Para saberlo es necesario compararlos todos entre sí... esto implica realizar una corrección del nivel de significancia para evitar incrementar el error de tipo I. Los dos métodos de comparación post-hoc más empleados para un test de Kruskal-Wallis son:
+
+- Test de Mann-Whitney entre cada par de grupos con corrección de significancia pairwise.wilcox.test().
+- Tukey’s range test: en R existe la función kruskalmc() del paquete pgirmess.
+- Test de Dunn.
+
+<br/>
+
+- **Cargo data**
+
+Se desea analizar los datos de un experimento para estudiar el efecto del porcentaje de algodón sobre la resistencia a la tensión de una fibra sintética.
+
+```{r data1}
+porcentaje<-c(rep(15,5),rep(20,5),rep(25,5),rep(30,5),rep(35,5))
+resistencia<-c(7,7,15,11,9,12,17,12,18,18,14,18,18,19,19,19,25,22,19,23,7,10,11,15,11)
+porcAlgodon <-data.frame(porcentaje,resistencia)
+
+porcentaje.f=factor(porcentaje)
+head(porcAlgodon,4)
+```
+
+<br/>
+
+- **Análisis exploratorio**
+
+```{r exploratorio1}
+boxplot(resistencia~porcentaje,data=porcAlgodon,xlab="Porcentaje",ylab="Resistencia",col="royalblue",border="darkblue", main= 'Resistencia según porcentaje de algodón')
+```
+
+- **Chequeo normalidad**
+
+```{r normalidad}
+# Creo dataframe vacío en donde voy a guardar el resultado de p-valor de la prueba de normalidad:
+result_df <- data.frame(porcentaje_level = unique(porcAlgodon$porcentaje),
+                        pval_normalidad = numeric(length(unique(porcAlgodon$porcentaje))))
+
+# Itero sobre cada nivel de porcentaje
+for (i in 1:length(unique(porcAlgodon$porcentaje))) {
+  # Filtrado de la data según cada nivel
+  subset_data <- porcAlgodon[porcAlgodon$porcentaje == unique(porcAlgodon$porcentaje)[i], ]
+  # Calculo el p-valor de la prueba de normalidad (Shapiro test)
+  p_val <- shapiro.test(subset_data$resistencia)$p.value
+  # Guardo el valor de p val para cada nivel de resistencia 
+  result_df$pval_normalidad[i] <- p_val
+}
+
+# Imprimo el resultado
+print(result_df)
+```
+
+**Conclusión NORMALIDAD**: Existen dos grupos en donde se rechaza la Ho de la prueba de normalidad.
+
+<br/>
+
+- **Chequeo homocedasticidad**
+
+```{r levene0}
+porcAlgodon$porcentaje <- factor(porcAlgodon$porcentaje)
+leveneTest(resistencia~porcentaje,data=porcAlgodon, center= 'median')
+```
+
+**Conclusión HOMOCEDASTICIDAD**: No existe suficiente evidencia para rechazar la Ho del test de homogeneidad de varianzas (Levene, en este caso). 
+
+<br/>
+
+- **Test estadístico Kruskall Wallis**
+
+```{r kw1}
+kruskal.test(resistencia ~ porcentaje, data = porcAlgodon)
+```
+**Conclusión KW**: La prueba estadística dió significativa, es decir que hay evidencia para rechazar la Ho. Alguno de los grupos muestra diferencias (el test encuentra significancia en la diferencia de al menos dos grupos).
+
+Para saber cuáles son los grupos diferentes se debe realizar un test _a posteriori_
+
+<br/>
+
+- **Post-test:**
+
+```{r kw_pt1}
+kruskalmc(resistencia  ~ porcentaje, data= porcAlgodon)
+```
+**Conclusión post test de KW**: Dado que el test de KRUSKALL dió significativo, se realizó un test _a posteriori_ utilizando la función kruskalmc() de la librería pgirmess (Tukey’s range test). Dicho test indicó que existen diferencias significativas entre los grupos 15-30 y 30-35.
+
