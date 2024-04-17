@@ -1,0 +1,974 @@
+---
+title: "Clase 12: Clasificación supervisada"
+author: "Práctico AID 2024"
+date: "29/06/2024"
+output:
+  html_document:
+    toc: yes
+    toc_float: yes
+    df_print: paged
+---
+
+# Introducción
+
+En esta última clase se verán **métodos de clasificación supervisada**.
+
+<br/>   
+
+- **Primero haremos un resumen de lo que vimos hasta el momento:**
+
+Al comienzo de la materia, vimos técnicas que servían para analizar la relación de poca cantidad de variables. 
+
+En el caso de variables categóricas se presentaron los test de independencia y homogeneidad, así como también los análisis de correspondencia y reglas de asociación.
+
+En el caso de las variables numéricas, se presentaron test estadísticas paramétricos o no paramétricos (dependiendo si se asume que los datos siguen alguna distribución, o si se cumple que lo hacen) para comparar la distribución de una variable en 2 o más grupos.
+
+<br/>   
+
+![](/Users/FR/Documents/Burocrático/DOCENCIA/MATERIAS/8_AID/2024/clase_12/Clase12_1.png){width=600, height=400}
+<br/>   
+
+Cuando el número de variables que se quería analizar era mayor a uno, se incursionaba en métodos de análisis multivariados.
+
+Un primer análisis exploratorio implicaba analizar la correlación / covarianza / vector de posición y escala del set de datos numéricos, así como también se presentaron herramientas gráficas para facilitar la visualización de los mismos.
+
+En términos de modelos, se presentaron estrategias en donde la variable _output_ era contínua (modelos de regresión) y algoritmos que incluyen datos mixtos pero en donde la salida es categórica (modelos de clasificación).
+
+<br/>   
+
+En cuanto a los modelos de clasificación, se presentaron algunos modelos no supervisados (no se cuenta con etiqueta previamente) y técnicas de reducción de la dimensionalidad.
+
+En esta clase, se presentarán los **métodos supervisados de clasificación**.
+
+<br/>   
+
+![](/Users/FR/Documents/Burocrático/DOCENCIA/MATERIAS/8_AID/2024/clase_12/Clase12_2.png){width=280, height=450}
+<br/>   
+
+Un método de clasificación consiste en entrenar un modelo para que aprenda patrones de comportamiento / distribución conjunta de las variables que puedan asociarse a etiquetas (o variable target) de los datos.
+
+Para conocer la _performance_ de un modelo en la tarea asignada, es necesario poder implementar alguna estrategia de evaluación.
+
+<br/> 
+
+A continuación se presentan los resultados de un test de Zika que se realizó sobre un grupo de pacientes; las alternativas posibles son "test positivo" o "test negativo", y se cuenta con información real de las etiquetas.
+
+En la imagen más abajo se presenta la matriz de confusión: la misma (en el caso de la figura) es una tabla de doble entrada en la que se relacionan las predicciones del modelo y las etiquetas reales de los datos de prueba.
+
+- **TP** refiere a los verdaderos positivos (el modelo asigna una predicción positiva a un dato que realmente tenía etiqueta positiva)
+
+- **FP** refiere a los falsos positivos (el modelo asigna una predicción positiva a un dato que tenía etiqueta negativa)
+
+- **TN** refiere a los verdaderos negativos (el modelo asigna una predicción negativa a un dato que realmente tenía etiqueta negativa)
+
+- **FN** refiere a los falsos negativos (el modelo asigna una predicción negativa a un dato que tenía etiqueta positiva)
+
+
+<br/>   
+
+![](/Users/FR/Documents/Burocrático/DOCENCIA/MATERIAS/8_AID/2024/clase_12/Clase12_3.png){width=400, height=200}
+
+<br/>   
+
+**Evaluación de los resultados con información derivada de la matriz de confusión:**
+
+A partir de los resultados de la matriz de confusión se pueden calcular ciertas métricas como el **accuracy, recall** (también llamado sensibilidad o TPR- _true positive rate_), **precision** (o PPV - _positive predictive value_) y **especificidad.**
+
+El modo de calcularlos se presenta a continuación:
+
+<br/>   
+
+![](/Users/FR/Documents/Burocrático/DOCENCIA/MATERIAS/8_AID/2024/clase_12/Clase12_4.png){width=400, height=260}
+
+<br/> 
+
+Analizar las métricas antes mencionadas puede ser útil para evaluar la _performance_ de un dado modelo.
+
+Existe otro método, muy utilizado, que consiste en calcular la **curva ROC** y el **área debajo de la curva (AUC)**. Dicha estrategia se explica a continuación:
+
+<br/> 
+
+Un modelo supervisado de clasificación asigna a los datos de prueba una probabilidad de pertenecer a uno u otro grupo de la variable target (en este caso, test positivo o negativo para zika). 
+
+Dependiendo del umbral de probabilidad que se elija para seleccionar la etiqueta del modelo, se podrán generar distintas matrices de confusión (ya que distintos umbrales producirán distintas predicciones).
+
+Esto hace que la elección del umbral no sea trivial, y que el mismo determine los resultados de métricas como accuracy, precision o recall, que se calculan con un único umbral y matriz de confusión.
+
+Una manera de tener una métrica integral del modelo es calcular curvas ROC (que relacionan TPR y FPR o _false positive rate_). La misma se construye con los datos que derivan de la elección de múltiples umbrales. 
+
+Luego, el análisis del área que queda debajo de esa curva contemplará el performance integral del modelo y servirá como una métrica de _performance_ independiente de la elección del umbral.
+
+
+![](/Users/FR/Documents/Burocrático/DOCENCIA/MATERIAS/8_AID/2024/clase_12/Clase12_5.png){width=650, height=230}
+
+
+<br/>   
+
+# Preparación de los datos
+
+paper original: Debernardi S. et al. *A combination of urinary biomarker panel and PancRISK score for earlier detection of pancreatic cancer: A case-control study.* **PLoS Med. 2020, 17, e1003489, doi: 10.1371/journal.pmed.1003489.**
+
+### Carga de datos y librerías
+
+_https://mlr.mlr-org.com/articles/tutorial/integrated_learners.html_ 
+
+
+*Cargo librerías*
+```{r libraries, warning=F, message=F}
+library(mlr)
+library(BSDA)
+library(viridisLite)
+library(xlsx)
+library(dplyr)
+library(ggplot2)
+# install_github("vqv/ggbiplot")
+library(ggbiplot)
+library(GGally)
+library(nortest)
+library(ggforce)
+# if (!requireNamespace("BiocManager", quietly = TRUE))
+        #install.packages("BiocManager")
+# BiocManager::install("scde")
+library(scde)
+library(devtools)
+library(geoR)
+library(mvnormtest)
+library(MASS)
+library(npmv)
+library(reshape)
+library(lattice)
+# install.packages( c("xts","quantmod") )        
+# install.packages("DMwR_0.4.1.tar.gz")
+library(DMwR) 
+library(pracma)
+library(e1071)
+library(nnet)
+library(cluster)
+library(gridExtra)
+library(cowplot)
+# remotes::install_github("trevorld/gridpattern")
+# remotes::install_github("coolbutuseless/ggpattern")
+library(ggpattern)
+library(ggpubr)
+library(scatterplot3d)  
+library(biotools)
+library(corpcor)
+library(Hotelling)
+library(DescTools)
+library(car)
+library(knitr)
+# library(vegan) # si la cargo, empieza a hacerme lío con el paquete mlr!!
+# install.packages("dendextend")
+library(dendextend)
+library(magrittr)
+library(googlesheets)
+# remotes::install_github("andrewheiss/reconPlots")
+library(reconPlots)
+library(tidyr)
+```
+
+*Creo tema general para los gráficos*
+```{r theme}
+theme <- theme(text = element_text(size=10),plot.title = element_text(size=12, face="bold.italic",
+               hjust = 0.5), axis.title.x = element_text(size=10, face="bold", colour='black'),
+               axis.title.y = element_text(size=10, face="bold"),panel.border = element_blank(),
+               panel.grid.major = element_blank(), panel.grid.minor = element_blank(), legend.title = element_text(face="bold"))
+```
+
+*Cargo datos* 
+```{r data} 
+
+id <- '1b92r3ZoMmlnSJQtyl9Gv8ueRTefSnsGU' # id del archivo en google drive
+data <- read.csv(sprintf("https://docs.google.com/uc?id=%s&export=download", id))
+colnames(data) %>% kable()
+```
+
+### Preprocesamiento de la base de datos
+```{r procesamiento}
+# Cambio el nombre de las variables a español
+colnames(data) <- c('id','cohorte','origen','edad','sexo','diagnosis','estadio','diagnosis_benigno','plasma_CA19_9','creatinina','LYVE1','REG1B','TFF1','REG1A')
+# La variable "diagnóstico" tiene 3 valores posibles: 1, 2, 3, en donde 1= normal, 2= tumoral benigno, 3= maligno.
+# Elijo los datos con diagnóstico 1 y 3, y renombro los valores de la variable "diagnóstico" --> 1=normal, 3=maligno (Sólo con fines didácticos. Podría tranquilamente hacer el análisis con 3 niveles de la variable)
+data <- data %>% filter(diagnosis=='1' | diagnosis=='3')
+data <- data %>% mutate(diagnosis = sub("1", "normal", diagnosis))
+data <- data %>% mutate(diagnosis = sub("3", "maligno", diagnosis))
+# Transformo las variables sexo y diagnóstico como factor
+data$sexo <- as.factor(data$sexo)
+# indico los niveles de la variable diagnóstico, para que aparezcan en los gráficos del modo especificado y no en orden alfabético (el default de R)
+data$diagnosis <- factor(data$diagnosis, levels= c('normal','maligno'))
+# Me fijo cuántos NAs hay en cada variable
+kable(colSums(is.na(data)))
+# Me quedo sólo con columnas: edad, sexo, diagnosis, creatinina, LYVE1, REG1B,TFF1 y las reordeno (sin NAs)
+data <- data %>% dplyr::select(6,5,4,10:13) 
+# Imprimo tabla
+kable(data.frame(variable = names(data),
+           class = sapply(data, class),
+           primeros_valores = sapply(data, function(x) paste0(head(x),  collapse = ", ")),
+           row.names = NULL))
+```
+
+# Análisis 
+### EDA exploratorio
+*EDA de las variables y correlaciones de acuerdo al valor de la variable diagnóstico (gráficos)*
+```{r AnálisisExploratorio}
+# Gráfico ggpairs
+data%>% ggpairs(.,mapping=ggplot2::aes(color = diagnosis,alpha = 0.1),
+        upper = list(continuous = wrap("cor", size = 2.5),discrete = "blank", combo="blank"),
+        lower = list(combo = "box"),progress = F)+
+        theme+
+        labs(title= 'Descripción de variables en la base de datos', x='Variable', y='Variable')+
+        scale_fill_manual(values=c('royalblue2','red'))+
+        scale_color_manual(values=c('royalblue2','#ff7474ff'))
+```
+
+*EDA univariado, agrupadas por diagnóstico y sexo*
+```{r AnálisisExploratorio 2}
+# gráficos para cada una de las variables por separado, de acuerdo al diagnóstico y sexo
+# ················ EDAD ········································································
+g1 <- ggplot(data = data, aes(x = diagnosis, fill = diagnosis, pattern = sexo, y= edad)) + 
+        theme +
+        geom_boxplot_pattern(position = position_dodge(preserve = "single"),
+                         color = "black", pattern_fill = "black",
+                         pattern_angle = 45,pattern_density = 0.1,
+                         pattern_spacing = 0.025, pattern_key_scale_factor = 0.6, 
+                         outlier.shape =  1, outlier.colour = 'darkgray') + 
+        scale_fill_manual(values = c('royalblue2','#ff7474ff')) +
+        scale_pattern_manual(values = c(F = "none", M = "stripe")) +
+        labs(title='EDAD') +
+        theme(legend.position = 'blank', axis.title.x=element_blank(),
+              axis.title.y=element_blank(),text = element_text(size=10),
+              plot.title = element_text(size=10, face='plain', hjust = 0.5)) +
+        guides(pattern = guide_legend(override.aes = list(fill = "white")),
+               fill = guide_legend(override.aes = list(pattern = "none")))
+# ················ CREATININA ·································································
+g2 <- ggplot(data = data, aes(x = diagnosis, fill = diagnosis, pattern = sexo, y= creatinina)) +
+        theme +
+        geom_boxplot_pattern(position = position_dodge(preserve = "single"),
+                             color = "black", pattern_fill = "black",
+                             pattern_angle = 45,pattern_density = 0.1,
+                             pattern_spacing = 0.025, pattern_key_scale_factor = 0.6,
+                             outlier.shape =  1, outlier.colour = 'darkgray') + 
+        scale_fill_manual(values = c('royalblue2','#ff7474ff')) +
+        scale_pattern_manual(values = c(F = "none", M = "stripe")) +
+        labs(title='CREATININA') +
+        theme(legend.position = 'blank', axis.title.x=element_blank(),
+              axis.title.y=element_blank(),text = element_text(size=10),
+              plot.title = element_text(size=10, face='plain', hjust = 0.5)) +
+        guides(pattern = guide_legend(override.aes = list(fill = "white")),
+               fill = guide_legend(override.aes = list(pattern = "none")))
+# ················ LYVE1 ······································································
+g3 <- ggplot(data = data, aes(x = diagnosis, fill = diagnosis, pattern = sexo, y= LYVE1)) +
+        theme +
+        geom_boxplot_pattern(position = position_dodge(preserve = "single"),
+                             color = "black", pattern_fill = "black",
+                             pattern_angle = 45, pattern_density = 0.1,
+                             pattern_spacing = 0.025, pattern_key_scale_factor = 0.6,
+                             outlier.shape =  1, outlier.colour = 'darkgray') + 
+        scale_fill_manual(values = c('royalblue2','#ff7474ff')) +
+        scale_pattern_manual(values = c(F = "none", M = "stripe")) +
+        labs(title='LYVE1')+
+        theme(legend.position = 'blank', axis.title.x=element_blank(),
+              axis.title.y=element_blank(),text = element_text(size=10),
+              plot.title = element_text(size=10, face='plain', hjust = 0.5)) +
+        guides(pattern = guide_legend(override.aes = list(fill = "white")),
+               fill = guide_legend(override.aes = list(pattern = "none")))
+# ················ REG1B ···································································
+g4 <- ggplot(data = data, aes(x = diagnosis, fill = diagnosis, pattern = sexo, y= REG1B)) +
+        theme +
+        geom_boxplot_pattern(position = position_dodge(preserve = "single"),
+                             color = "black", pattern_fill = "black",
+                             pattern_angle = 45,pattern_density = 0.1,
+                             pattern_spacing = 0.025,pattern_key_scale_factor = 0.6,
+                             outlier.shape =  1, outlier.colour = 'darkgray') + 
+        scale_fill_manual(values = c('royalblue2','#ff7474ff')) +
+        scale_pattern_manual(values = c(F = "none", M = "stripe")) +
+        labs(title='REG1B') +
+        theme(legend.position = 'blank', axis.title.x=element_blank(),
+              axis.title.y=element_blank(),text = element_text(size=10),
+              plot.title = element_text(size=10, face='plain',hjust = 0.5)) +
+        guides(pattern = guide_legend(override.aes = list(fill = "white")),
+               fill = guide_legend(override.aes = list(pattern = "none")))
+# ················ TFF1 ·································································
+g5 <- ggplot(data = data, aes(x = diagnosis, fill = diagnosis, pattern = sexo, y= TFF1)) + 
+        theme +
+        geom_boxplot_pattern(position = position_dodge(preserve = "single"),
+                             color = "black", pattern_fill = "black",
+                             pattern_angle = 45,pattern_density = 0.1,
+                             pattern_spacing = 0.025,pattern_key_scale_factor = 0.6,
+                             outlier.shape =  1, outlier.colour = 'darkgray') + 
+        scale_fill_manual(values = c('royalblue2','#ff7474ff')) +
+        scale_pattern_manual(values = c(F = "none", M = "stripe")) +
+        labs(title='TFF1', fill='Diagnóstico', pattern='Sexo') +
+        theme(legend.position = c(1.8,0.5), axis.title.x=element_blank(),
+              axis.title.y=element_blank(),text = element_text(size=10),
+              plot.title = element_text(size=10, face='plain',hjust = 0.5)) +
+        guides(pattern = guide_legend(override.aes = list(fill = "white")),
+               fill = guide_legend(override.aes = list(pattern = "none")))
+# ············ JUNTO TODOS LOS GRAFICOS ···············································
+title1=text_grob(label='Análisis exploratorio de las variables', size = 14, face = "bold.italic")
+titlex=text_grob(label='Variable', size = 12, face = "bold")   
+
+grid.arrange(g1, g2, g3, g4, g5, top = title1, bottom=titlex, ncol=3)
+```
+
+*Reducción del espacio de representación de los datos mediante Análisis de Componentes Principales (PCA)*
+```{r PCA}
+# Preparo los datos para análisis de componentes principales
+datos_para_acp = data[c(3:7)] # todas las variables numéricas
+datos.pc = prcomp(datos_para_acp,scale = TRUE) #escalo los datos
+#grafico
+ggbiplot(datos.pc, obs.scale=0.1 ,var.scale=1,alpha=0.5,
+         groups=factor(data$diagnosis)) +
+        scale_color_manual(name="diagnosis",values=c('royalblue2','#ff7474ff'),
+                           labels=c("normal",'maligno')) +
+        theme + labs(title='Análisis de componentes principales') + 
+        theme(legend.position=c(.85,.15)) 
+```
+
+### Estadístico
+*Análisis estadístico univariado agrupado por diagnóstico- (Normalidad)*
+```{r qqplot univariado para cada grupo}
+# Creo dataframes de acuerdo al diagnóstico
+data_n <- data%>%filter(diagnosis=='normal')
+data_m <- data%>%filter(diagnosis=='maligno')
+# Realizo un qqplot de cada una de las variables numéricas, y calculo normalidad univariada por Anderson Darling (para diagnóstico NORMAL)
+par(mfrow = c(2,5))
+pval = list() 
+for (k in 3:7) {qqnorm(data_n[,k],main = names(data_n[k]),xlab = "Cuant. teóricos", 
+                       ylab = "Cuantiles muestra\ndiagnóstico NORMAL",col='royalblue2')
+        qqline(data_n[,k],col="black") 
+        pval[k] = ad.test(data_n[,k])$p.value}
+# Calculo p-valor de test de normalidad univariada para datos con diagnóstico "NORMAL" 
+df <- data.frame(matrix(unlist(as.list(colnames(data_n)[3:7])),
+                        nrow=length(as.list(colnames(data_n)))-2, byrow=TRUE))
+df1 <- data.frame(matrix(unlist(pval[3:7]), nrow=length(pval)-2, byrow=TRUE))
+j <- cbind(df,df1)
+colnames(j) <- c('variable','p.valor normal')
+# ···························································································
+# Realizo un qqplot de cada una de las variables numéricas, y calculo normalidad univariada por Anderson Darling (para diagnóstico MALIGNO)
+pval2 = list() 
+for (k in 3:7) {qqnorm(data_m[,k],main = names(data_m[k]),xlab = "Cuant. teóricos", ylab = "Cuantiles muestra\ndiagnóstico MALIGNO", col='#ff7474ff')
+        qqline(data_m[,k],col="black") 
+        pval2[k] = ad.test(data_m[,k])$p.value}
+# Calculo p-valor de test de normalidad univariada para datos con diagnóstico "MALIGNO" 
+df2 <- data.frame(matrix(unlist(as.list(colnames(data_m)[3:7])),
+                        nrow=length(as.list(colnames(data_m)))-2, byrow=TRUE))
+df12 <- data.frame(matrix(unlist(pval2[3:7]), nrow=length(pval2)-2, byrow=TRUE))
+j2 <- cbind(df2,df12)
+colnames(j2) <- c('variable','p.valor maligno')
+j2 <- j2%>%dplyr::select(2)
+# ···························································································
+# Imprimo resultados de ambos grupos
+kable(cbind(j,j2))
+```
+
+*Análisis estadístico multivariado*
+
+1) Normalidad
+```{r AnálisisNormalidad}
+# Analizo normalidad multivariada y multivariada por grupo con Shapiro Wilks
+pval_all <- mshapiro.test(t(data[,3:7]))
+pval_normal <- mshapiro.test(t(data%>%dplyr::filter(diagnosis=="normal")%>% dplyr::select(3:7)))
+pval_maligno <- mshapiro.test(t(data%>%dplyr::filter(diagnosis=="maligno")%>% dplyr::select(3:7)))
+
+ShapiroW_p.valor <- c(pval_all$p.value, pval_normal$p.value, pval_maligno$p.value)
+Datos <- c('todos','subset normal', 'subset maligno')
+
+# Imprimo resultados de normalidad multivariada total y por grupos (estos últimos son relevantes)
+kable(cbind(Datos,ShapiroW_p.valor))
+```
+
+2) Homocedasticidad (BoxM)
+```{r AnálisisHomocedasticidad BoxM}
+# Analizo igualdad de matrices de varianzas y covarianzas con boxM
+p.valor <- boxM(data = data[, 3:7], grouping = data[, 1])$p.value
+Test <- boxM(data = data[, 3:7], grouping = data[, 1])$method
+
+# Imprimo resultados de test
+kable(cbind(Test, p.valor))
+```
+
+3) Homocedasticidad (Levene)
+```{r AnálisisHomocedasticidad Levene}
+# Como boxM es sensible a la falta de normalidad, aplico Levene utilizando betadisper del paquete "vegan" (equivalente a levene, pero multivariado)
+
+matriz_de_distancias <- vegan::betadisper(dist(data[, 3:7], method='euclidean'), data$diagnosis, type = c("median","centroid"), bias.adjust = T,sqrt.dist = FALSE, add = FALSE)
+ test_levene <- anova(matriz_de_distancias)
+ p.valor <- test_levene$`Pr(>F)`[1]
+ TukeyHSD(matriz_de_distancias)
+ #plot(matriz_de_distancias)
+Test <- 'Levene'
+
+# Imprimo resultado del test
+kable(cbind(Test,p.valor))
+```
+
+4) Comparación del vector de medias (Test Hotelling T2, normal asintótico)
+```{r Diferencias vector medias HOTELLING}
+# Analizo cómo me da Hotelling para ver diferencias en el vector de medias de cada grupo
+HOTELLING <- HotellingsT2Test(as.matrix(data[,-c(1,2)]) ~ diagnosis, data =data)
+Test <- HOTELLING$method
+p.valor <- HOTELLING$p.value[1]
+
+# Imprimo resultados en una tabla
+kable(cbind(Test, p.valor ))
+```
+
+5) Comparación del vector de medias (Test npmv, no paramétrico)
+```{r Diferencias vector medias npmv, warning=FALSE}
+# se utiliza el paquete npmv no paramétrico para comparar vector de medias. (Nonparametric Inference for Multivariate Data: R Package npmv, January 2017, Volume 76, Issue 4. doi: 10.18637/jss.v076.i04, https://www.jstatsoft.org/article/view/v076i04)
+
+noparam <- nonpartest(creatinina | LYVE1 | REG1B | TFF1 | edad ~ diagnosis, data = data, permreps = 1000, plots=F) 
+p.valor <- noparam$results$`P-value`[1]
+Test <- 'No paramétrico multivariado (npmv)'
+
+# Imprimo el resultado
+kable(cbind(Test, p.valor ))
+# ·························· POST TESTS ··································································
+#ssnonpartest(creatinine | LYVE1 | REG1B | TFF1 | age ~ diagnosis, data = data,test = c(1, 0, 0, 0), alpha = 0.05, factors.and.variables = TRUE) # para ver comparaciones posteriores
+```
+
+# Preparación de los datos de testeo
+*Separación de conjunto de entrenamiento (train) y prueba (test) [70:30]*
+```{r separación test y train}
+set.seed(1409) # para asegurar reproducibilidad
+dt = sort(sample(nrow(data), nrow(data)*.7))
+datos_tr<-data[dt,]
+datos_te<-data[-dt,]
+```
+
+*Escalado de los datos*
+```{r Escalado}
+# Se realiza el escalado/estandarización con ->  (x - mean(x)) / sd(x)
+
+# Calculo media y sd de subconjunto de entrenamiento (train), y con esos datos hago el escalado del test. La idea de escalar el conjunto de test (prueba) utilizando datos solamente de train es para evitar el data leakeage.
+
+# Hago escalado a mano del test set con media del training, y sd del training
+for (k in 3:7){datos_te[,k]=(datos_te[,k]-mean(datos_tr[,k]))/sd(datos_tr[,k])}
+# Hago automáticamente con la función scale, el escalado de training, y le vuelvo a sumar las columnas sex y diagnosis 
+datos_tr = as.data.frame(scale(datos_tr[,3:7]))
+datos_tr$diagnosis <- data[dt,]$diagnosis
+datos_tr$sexo <- data[dt,]$sexo
+# y las pongo en = orden que testset
+datos_tr <- datos_tr%>%dplyr::select(6,7,1:5)
+
+# creo una única df con todos los datos escalados (uso luego en svm)
+datos_escalados <- as.data.frame(scale(data[,3:7]))
+datos_escalados$diagnosis <- data$diagnosis
+datos_escalados$sexo <- data$sexo
+datos_escalados <- datos_escalados%>%dplyr::select(6,7,1:5)
+
+```
+
+
+# Métodos de clasificación
+
+SUPERVISADOS
+
+* *Análisis discriminante lineal (LDA) - clase 11 - Pame*
+* *Análisis discriminante cuadrático (QDA) - clase 11 - Pame*
+* *Análisis discriminante robusto - apunte teórico (Chan)*
+
+### * *Regresión logística* 
+
+![-](/Users/FR/Documents/Burocrático/DOCENCIA/MATERIAS/8_AID/2023/LR.png){width=50%}
+
+
+_Este tema se ve en profundidad la materia de Enfoque Estadístico del Aprendizate (Farall, 2do cuatrimestre)_
+```{r regresión logística}
+# chequeo el balance de las distintas clases de  la variable diagnóstico en el conjunto de todos los datos, los datos de prueba y los datos de entramiento.
+Entrenamiento <- table(datos_tr$diagnosis) #126 normal, 140 maligno
+Prueba <- table(datos_te$diagnosis) # 57 normal, 58 maligno
+Total <- table(data$diagnosis) # 183 normal, 198 maligno
+kable(rbind(Entrenamiento, Prueba,Total))
+# Armo modelo de regresión logistica. 
+set.seed(1)
+task = makeClassifTask(data = datos_tr[-2], target = "diagnosis") 
+lrn = makeLearner("classif.logreg", predict.type = "prob")
+mod_lr = mlr::train(lrn, task)
+# Predicción en TEST
+pred_lr= predict(mod_lr, newdata = datos_te[-2])
+acc_lg1 <- round(measureACC(as.data.frame(pred_lr)$truth, as.data.frame(pred_lr)$response),3)
+AUC_lg_te <- round(measureAUC(as.data.frame(pred_lr)$prob.maligno,as.data.frame(pred_lr)$truth,'normal','maligno'),3)
+# ···························································································
+# Predicción en TRAIN
+pred_lr2 = predict(mod_lr, newdata = datos_tr[-2]) # por si quiero ver naive sobre training
+acc_lg2 <- round(measureACC(as.data.frame(pred_lr2)$truth, as.data.frame(pred_lr2)$response),3)
+AUC_lg_tr <- round(measureAUC(as.data.frame(pred_lr2)$prob.maligno,as.data.frame(pred_lr2)$truth, 'normal','maligno'),3)
+# ···························································································
+# Cambio el threshold [esto lo hago para train y test]
+acc=NULL
+acc2=NULL
+threshold = seq(0.1,0.95,0.01)
+for (i in 1:length(threshold)) {
+        pred = setThreshold(pred_lr, threshold = threshold[i])
+        acc[i] = measureACC(as.data.frame(pred)$truth, as.data.frame(pred)$response)}
+for (i in 1:length(threshold)) {
+        pred2 = setThreshold(pred_lr2, threshold = threshold[i])
+        acc2[i] = measureACC(as.data.frame(pred2)$truth, as.data.frame(pred2)$response)}
+par(mfcol = c(1,2))
+
+new_df1 <- as.data.frame(cbind(threshold,acc))
+new_df1 <- new_df1%>%mutate(sub_data='test')
+new_df2 <- as.data.frame(cbind(threshold,acc2))
+colnames(new_df2) <- c('threshold','acc')
+new_df2 <- new_df2%>%mutate(sub_data='train')
+
+new_df <- as.data.frame(rbind(new_df1,new_df2))
+
+#new_df1[which.max(new_df1$acc),"threshold"] # test 0.33
+#new_df2[which.max(new_df2$acc),"threshold"] # train 0.53
+
+# Para independizarnos de la elección del umbral, grafico curvas ROC para las predicciones del modelo LR con los datos de TEST y TRAIN
+df_lr = generateThreshVsPerfData(list(lgr_te = pred_lr, lgr_tr = pred_lr2),
+                                 measures = list(fpr, tpr, mmce))
+
+plotROCCurves(df_lr) + theme +
+        labs(title='Curva ROC del modelo regresión logística', x='Tasa de falsos positivos (FPR)',
+             y='Tasa de positivos verdaderos (TPR)', color='Conjunto de\n evaluación') +
+        scale_color_manual(values = c("red", "darkred"), labels=c('prueba','entrenamiento')) +
+        geom_label(label="AUC= 0.903", x=0.35, y=0.75, label.size = 0.3, size=4,
+                   color = "red",fill="white") +
+        geom_label(label="AUC= 0.921", x=0.07, y=0.97, label.size = 0.3, size=4,
+                   color = "darkred",fill="white")
+# ················ Métricas del modelo de Regresión Logística  ················
+Métrica <- c('valor','datos')
+Accuracy <- c(acc_lg1,'prueba')
+Accuracy. <- c(acc_lg2,'entrenamiento')
+AUC_ROC <- c(AUC_lg_te,'prueba')
+AUC_ROC. <- c(AUC_lg_tr,'entrenamiento')
+# Imprimo los resultados de performance
+kable(rbind(Métrica, Accuracy, Accuracy., AUC_ROC, AUC_ROC.))
+```
+```{r recall de log reg}
+# ···························································································
+# Cambio el threshold [esto lo hago para train y test]
+recall=NULL
+precision=NULL
+threshold = seq(0.1,0.95,0.01)
+for (i in 1:length(threshold)) {
+        pred = setThreshold(pred_lr2, threshold = threshold[i])
+        recall[i] = measureTPR(as.data.frame(pred)$truth, as.data.frame(pred)$response,'maligno')}  #recall
+for (i in 1:length(threshold)) {
+        pred2 = setThreshold(pred_lr2, threshold = threshold[i])
+        precision[i] = measurePPV(as.data.frame(pred2)$truth, as.data.frame(pred2)$response,'maligno',probabilities = NULL)}#precision
+par(mfcol = c(1,2))
+
+new_df1 <- as.data.frame(cbind(threshold,recall))
+colnames(new_df1) <- c('threshold','metric')
+new_df1 <- new_df1%>%mutate(sub_data='recall')
+new_df2 <- as.data.frame(cbind(threshold,precision))
+colnames(new_df2) <- c('threshold','metric')
+new_df2 <- new_df2%>%mutate(sub_data='precision')
+
+new_dfa <- as.data.frame(rbind(new_df1,new_df2))
+# ···························································································
+curve1 <- new_df1%>%dplyr::select(1,2)
+curve2 <- new_df2%>%dplyr::select(1,2)
+colnames(curve1) <- c('x','y')
+colnames(curve2) <- c('x','y')
+# threshold en el que se intersectan las curvas de recall y precision (sensibilidad y especificidad, respectivamente)
+thr=curve_intersect(curve1, curve2 , empirical = TRUE, domain = NULL)$x
+
+# Gráfico de cómo varía la métrica de performance recall y precision, de acuerdo al umbral elegido
+ggplot(new_dfa, aes(x=threshold, y=metric)) + geom_line(aes(color = sub_data,linetype=sub_data)) +
+        theme + labs(x='Umbral', y='Métrica de performance',
+                     title= 'Evaluación del modelo de regresión logística en subconjunto de prueba') +
+        scale_color_manual(values = c("red", "LightSeaGreen"),labels=c('recall (TPR)','precision (PPV)')) +
+        scale_linetype_manual(values=c(1,2), labels=c('recall (TPR)','precision (PPV)')) + 
+        labs(color='Métrica',linetype='Métrica')+
+        geom_vline(xintercept = thr, linetype=3, color='darkgray')
+# ···························································································
+# Gráfico de cómo varía la métrica de performance accuracy, de acuerdo al umbral elegido
+ggplot(new_df, aes(x=threshold, y=acc)) + geom_line(aes(color = sub_data,linetype=sub_data)) +
+        theme + labs(x='Umbral', y='Métrica de performance (accuracy)',
+                     title= 'Evaluación del modelo de regresión logística') +
+        scale_color_manual(values = c("red", "darkred"),labels=c('prueba','entrenamiento')) +
+        scale_linetype_manual(values=c(1,2), labels=c('prueba','entrenamiento')) + 
+        labs(color='Conjunto de\n evaluación',linetype='Conjunto de\n evaluación')+
+        geom_vline(xintercept = thr, linetype=3, color='darkgray') 
+```
+```{r setthreshold} 
+#seteo el threshold (x) en donde la curva de recall y la de precision se cruzan
+# calculo AUC, accuracy, recall y precision con ese threshold.
+
+prediccion_threshold <- setThreshold(pred_lr, thr)
+
+AUC_lg_tethreshold <- round(measureAUC(as.data.frame(prediccion_threshold)$prob.maligno,as.data.frame(prediccion_threshold)$truth,'normal','maligno'),3) #0.889 ....> y sí! no depende del threshold
+
+accuracy_con_threshold <- round(measureACC(as.data.frame(prediccion_threshold)$truth, as.data.frame(prediccion_threshold)$response),3)
+
+recall_con_threshold <- round(measureTPR(as.data.frame(prediccion_threshold)$truth, as.data.frame(prediccion_threshold)$response, 'maligno'),3)
+
+precision_con_threshold <- round(measurePPV(as.data.frame(prediccion_threshold)$truth, as.data.frame(prediccion_threshold)$response, 'maligno'),3)
+```
+
+```{r plot }
+plotLearnerPrediction(lrn,task,features=c("REG1B","LYVE1"),cv=100L,gridsize=100)+scale_fill_manual(values=c("#ff0061","#11a6fc"))+theme_bw() 
+                           
+```
+
+### * *Máquinas de soporte vectorial (SVM)*
+![-](/Users/FR/Documents/Burocrático/DOCENCIA/MATERIAS/8_AID/2023/SVM.png){width=70%}
+
+
+
+A) Kernel lineal
+```{r SVM}
+# Defino modelo SVM
+set.seed(1)
+task = makeClassifTask(data = datos_tr[-2], target = "diagnosis") 
+lrn_svm1 = makeLearner("classif.svm", predict.type = "prob", par.vals = list( kernel = "linear", cost=2)) 
+mod_svm1 = mlr::train(lrn_svm1, task)
+# Predicción TEST
+pred_svm1= predict(mod_svm1, newdata = datos_te[-2])
+acc_svm1 <- round(measureACC(as.data.frame(pred_svm1)$truth, as.data.frame(pred_svm1)$response),3)
+AUC_svm1_te <- round(measureAUC(as.data.frame(pred_svm1)$prob.maligno,as.data.frame(pred_svm1)$truth,'normal','maligno'),3)
+# ···························································································
+# Predicción TRAIN (naive)
+pred_svm_1 = predict(mod_svm1, newdata = datos_tr[-2]) # por si quiero ver naive sobre training
+acc_svm_1 <- round(measureACC(as.data.frame(pred_svm_1)$truth, as.data.frame(pred_svm_1)$response),3)
+AUC_svm1_tr <- round(measureAUC(as.data.frame(pred_svm_1)$prob.maligno,as.data.frame(pred_svm_1)$truth, 'normal','maligno'),3)
+# ···························································································
+# Cambio el threshold [esto lo hago para train y test]
+acc=NULL
+acc2=NULL
+threshold = seq(0.1,0.95,0.01)
+for (i in 1:length(threshold)) {
+        pred = setThreshold(pred_svm1, threshold = threshold[i])
+        acc[i] = measureACC(as.data.frame(pred)$truth, as.data.frame(pred)$response)}
+for (i in 1:length(threshold)) {
+        pred2 = setThreshold(pred_svm_1, threshold = threshold[i])
+        acc2[i] = measureACC(as.data.frame(pred2)$truth, as.data.frame(pred2)$response)}
+par(mfcol = c(1,2))
+
+new_df1 <- as.data.frame(cbind(threshold,acc))
+new_df1 <- new_df1%>%mutate(sub_data='test')
+new_df2 <- as.data.frame(cbind(threshold,acc2))
+colnames(new_df2) <- c('threshold','acc')
+new_df2 <- new_df2%>%mutate(sub_data='train')
+
+new_df <- as.data.frame(rbind(new_df1,new_df2))
+
+#new_df1[which.max(new_df1$acc),"threshold"] 
+#new_df2[which.max(new_df2$acc),"threshold"] 
+# ···························································································
+# Gráfico de cómo varía la métrica de performance accuracy, de acuerdo al umbral elegido
+ggplot(new_df, aes(x=threshold, y=acc)) + geom_line(aes(color = sub_data,linetype=sub_data)) +
+        theme +labs(x='Umbral', y='Métrica de performance (accuracy)', 
+                     title= 'Evaluación del modelo de Máquinas de soporte vectorial SVM') +
+        scale_color_manual(values = c("red", "darkred"),labels=c('prueba','entrenamiento')) +
+        scale_linetype_manual(values=c(1,2), labels=c('prueba','entrenamiento')) + 
+        labs(color='Conjunto de\n evaluación',linetype='Conjunto de\n evaluación')
+# Para independizarnos de la elección del umbral, grafico curvas ROC para las predicciones del modelo SVM con los datos de TEST y TRAIN
+df_svm = generateThreshVsPerfData(list(svm_te = pred_svm1, svm_tr = pred_svm_1), 
+                                  measures = list(fpr, tpr, mmce))
+
+plotROCCurves(df_svm) + theme +
+        labs(title='Curva ROC del modelo de Máquinas de soporte vectorial SVM kernel lineal', 
+             x='Tasa de falsos positivos (FPR)', y='Tasa de positivos verdaderos (TPR)',
+             color='Conjunto de\n evaluación') +
+        scale_color_manual(values = c("red", "darkred"), labels=c('prueba','entrenamiento')) +
+        geom_label(label="AUC= 0.906", x=0.35, y=0.75, label.size = 0.3, size=4,
+                   color = "red",fill="white") + 
+        geom_label(label="AUC= 0.922", x=0.07, y=0.97, label.size = 0.3, size=4,
+                   color = "darkred",fill="white")
+
+# ················ Métricas del modelo de SVM ················
+Métrica <- c('valor','datos')
+Accuracy <- c(acc_svm1,'prueba')
+Accuracy. <- c(acc_svm_1,'entrenamiento')
+AUC_ROC <- c(AUC_svm1_te,'prueba')
+AUC_ROC. <- c(AUC_svm1_tr,'entrenamiento')
+# Imprimo resultados
+kable(rbind(Métrica, Accuracy, Accuracy., AUC_ROC, AUC_ROC.))
+
+
+plotLearnerPrediction(lrn_svm1,task,features=c("REG1B","LYVE1"),cv=100L,gridsize=100)+scale_fill_manual(values=c("#ff0061","#11a6fc"))+theme_bw() 
+```
+
+B) Kernel sigmoideo
+```{r SVM2}
+# Defino modelo SVM
+set.seed(1)
+task = makeClassifTask(data = datos_tr[-2], target = "diagnosis") 
+lrn_svm2 = makeLearner("classif.svm", predict.type = "prob", par.vals = list( kernel = "sigmoid", cost=2)) 
+mod_svm2 = mlr::train(lrn_svm2, task)
+# Predicción TEST
+pred_svm2= predict(mod_svm2, newdata = datos_te[-2])
+acc_svm2 <- round(measureACC(as.data.frame(pred_svm2)$truth, as.data.frame(pred_svm2)$response),3)
+AUC_svm2_te <- round(measureAUC(as.data.frame(pred_svm2)$prob.maligno,as.data.frame(pred_svm2)$truth,'normal','maligno'),3)
+# ···························································································
+# Predicción TRAIN (naive)
+pred_svm_2 = predict(mod_svm2, newdata = datos_tr[-2]) 
+acc_svm_2 <- round(measureACC(as.data.frame(pred_svm_2)$truth, as.data.frame(pred_svm_2)$response),3)
+AUC_svm2_tr <- round(measureAUC(as.data.frame(pred_svm_2)$prob.maligno,as.data.frame(pred_svm_2)$truth, 'normal','maligno'),3)
+# ···························································································
+# Cambio el threshold [esto lo hago para train y test]
+acc=NULL
+acc2=NULL
+threshold = seq(0.1,0.95,0.01)
+for (i in 1:length(threshold)) {
+        pred = setThreshold(pred_svm2, threshold = threshold[i])
+        acc[i] = measureACC(as.data.frame(pred)$truth, as.data.frame(pred)$response)}
+for (i in 1:length(threshold)) {
+        pred2 = setThreshold(pred_svm_2, threshold = threshold[i])
+        acc2[i] = measureACC(as.data.frame(pred2)$truth, as.data.frame(pred2)$response)}
+par(mfcol = c(1,2))
+
+new_df1 <- as.data.frame(cbind(threshold,acc))
+new_df1 <- new_df1%>%mutate(sub_data='test')
+new_df2 <- as.data.frame(cbind(threshold,acc2))
+colnames(new_df2) <- c('threshold','acc')
+new_df2 <- new_df2%>%mutate(sub_data='train')
+
+new_df <- as.data.frame(rbind(new_df1,new_df2))
+
+#new_df1[which.max(new_df1$acc),"threshold"] 
+#new_df2[which.max(new_df2$acc),"threshold"] 
+# ···························································································
+# Gráfico de cómo varía la métrica de performance accuracy, de acuerdo al umbral elegido
+ggplot(new_df, aes(x=threshold, y=acc)) + geom_line(aes(color = sub_data,linetype=sub_data)) +
+        theme +labs(x='Umbral', y='Métrica de performance (accuracy)', 
+                     title= 'Evaluación del modelo de Máquinas de soporte vectorial SVM') +
+        scale_color_manual(values = c("red", "darkred"),labels=c('prueba','entrenamiento')) +
+        scale_linetype_manual(values=c(1,2), labels=c('prueba','entrenamiento')) + 
+        labs(color='Conjunto de\n evaluación',linetype='Conjunto de\n evaluación')
+# Para independizarnos de la elección del umbral, grafico curvas ROC para las predicciones del modelo SVM con los datos de TEST y TRAIN
+df_svm = generateThreshVsPerfData(list(svm_te = pred_svm2, svm_tr = pred_svm_2), 
+                                  measures = list(fpr, tpr, mmce))
+
+plotROCCurves(df_svm) + theme +
+        labs(title='Curva ROC del modelo de Máquinas de soporte vectorial SVM kernel radial', 
+             x='Tasa de falsos positivos (FPR)', y='Tasa de positivos verdaderos (TPR)',
+             color='Conjunto de\n evaluación') +
+        scale_color_manual(values = c("red", "darkred"), labels=c('prueba','entrenamiento')) +
+        geom_label(label="AUC= 0.86", x=0.35, y=0.75, label.size = 0.3, size=4,
+                   color = "red",fill="white") + 
+        geom_label(label="AUC= 0.867", x=0.07, y=0.97, label.size = 0.3, size=4,
+                   color = "darkred",fill="white")
+# ················ Métricas del modelo de SVM ················
+Métrica <- c('valor','datos')
+Accuracy <- c(acc_svm2,'prueba')
+Accuracy. <- c(acc_svm_2,'entrenamiento')
+AUC_ROC <- c(AUC_svm2_te,'prueba')
+AUC_ROC. <- c(AUC_svm2_tr,'entrenamiento')
+# Imprimo resultados de métricas de performance
+kable(rbind(Métrica, Accuracy, Accuracy., AUC_ROC, AUC_ROC.))
+
+plotLearnerPrediction(lrn_svm2,task,features=c("REG1B","LYVE1"),cv=100L,gridsize=100)+scale_fill_manual(values=c("#ff0061","#11a6fc"))+theme_bw() 
+
+```
+
+C) Kernel radial
+```{r SVM3}
+# Defino modelo SVM
+set.seed(1)
+task = makeClassifTask(data = datos_tr[-2], target = "diagnosis") 
+lrn_svm3 = makeLearner("classif.svm", predict.type = "prob", par.vals = list( kernel = "radial", cost=2)) 
+mod_svm3 = mlr::train(lrn_svm3, task)
+# Predicción TEST
+pred_svm3= predict(mod_svm3, newdata = datos_te[-2])
+acc_svm3 <- round(measureACC(as.data.frame(pred_svm3)$truth, as.data.frame(pred_svm3)$response),3)
+AUC_svm3_te <- round(measureAUC(as.data.frame(pred_svm3)$prob.maligno,as.data.frame(pred_svm3)$truth,'normal','maligno'),3)
+# ···························································································
+# Predicción TRAIN (naive)
+pred_svm_3 = predict(mod_svm3, newdata = datos_tr[-2]) # por si quiero ver naive sobre training
+acc_svm_3 <- round(measureACC(as.data.frame(pred_svm_3)$truth, as.data.frame(pred_svm_3)$response),3)
+AUC_svm3_tr <- round(measureAUC(as.data.frame(pred_svm_3)$prob.maligno,as.data.frame(pred_svm_3)$truth, 'normal','maligno'),3)
+# ···························································································
+# Cambio el threshold [esto lo hago para train y test]
+acc=NULL
+acc2=NULL
+threshold = seq(0.1,0.95,0.01)
+for (i in 1:length(threshold)) {
+        pred = setThreshold(pred_svm3, threshold = threshold[i])
+        acc[i] = measureACC(as.data.frame(pred)$truth, as.data.frame(pred)$response)}
+for (i in 1:length(threshold)) {
+        pred2 = setThreshold(pred_svm_3, threshold = threshold[i])
+        acc2[i] = measureACC(as.data.frame(pred2)$truth, as.data.frame(pred2)$response)}
+par(mfcol = c(1,2))
+
+new_df1 <- as.data.frame(cbind(threshold,acc))
+new_df1 <- new_df1%>%mutate(sub_data='test')
+new_df2 <- as.data.frame(cbind(threshold,acc2))
+colnames(new_df2) <- c('threshold','acc')
+new_df2 <- new_df2%>%mutate(sub_data='train')
+
+new_df <- as.data.frame(rbind(new_df1,new_df2))
+
+#new_df1[which.max(new_df1$acc),"threshold"] 
+#new_df2[which.max(new_df2$acc),"threshold"] 
+# ···························································································
+# Gráfico de cómo varía la métrica de performance accuracy, de acuerdo al umbral elegido
+ggplot(new_df, aes(x=threshold, y=acc)) + geom_line(aes(color = sub_data,linetype=sub_data)) +
+        theme +labs(x='Umbral', y='Métrica de performance (accuracy)', 
+                     title= 'Evaluación del modelo de Máquinas de soporte vectorial SVM') +
+        scale_color_manual(values = c("red", "darkred"),labels=c('prueba','entrenamiento')) +
+        scale_linetype_manual(values=c(1,2), labels=c('prueba','entrenamiento')) + 
+        labs(color='Conjunto de\n evaluación',linetype='Conjunto de\n evaluación')
+# Para independizarnos de la elección del umbral, grafico curvas ROC para las predicciones del modelo SVM con los datos de TEST y TRAIN
+df_svm = generateThreshVsPerfData(list(svm_te = pred_svm3, svm_tr = pred_svm_3), 
+                                  measures = list(fpr, tpr, mmce))
+
+plotROCCurves(df_svm) + theme +
+        labs(title='Curva ROC del modelo de Máquinas de soporte vectorial SVM kernel radial', 
+             x='Tasa de falsos positivos (FPR)', y='Tasa de positivos verdaderos (TPR)',
+             color='Conjunto de\n evaluación') +
+        scale_color_manual(values = c("red", "darkred"), labels=c('prueba','entrenamiento')) +
+        geom_label(label="AUC= 0.918", x=0.35, y=0.75, label.size = 0.3, size=4,
+                   color = "red",fill="white") + 
+        geom_label(label="AUC= 0.961", x=0.07, y=0.97, label.size = 0.3, size=4,
+                   color = "darkred",fill="white")
+# ················ Métricas del modelo de SVM ················
+Métrica <- c('valor','datos')
+Accuracy <- c(acc_svm3,'prueba')
+Accuracy. <- c(acc_svm_3,'entrenamiento')
+AUC_ROC <- c(AUC_svm3_te,'prueba')
+AUC_ROC. <- c(AUC_svm3_tr,'entrenamiento')
+# Imprimo resultados de métricas de performance
+kable(rbind(Métrica, Accuracy, Accuracy., AUC_ROC, AUC_ROC.))
+
+plotLearnerPrediction(lrn_svm3,task,features=c("REG1B","LYVE1"),cv=100L,gridsize=100)+scale_fill_manual(values=c("#ff0061","#11a6fc"))+theme_bw() 
+
+```
+
+### * *K-nearest neighbours (KNN)*
+
+![-](/Users/FR/Documents/Burocrático/DOCENCIA/MATERIAS/8_AID/2023/knn.png){width=50%}
+```{r knn_0}
+task = makeClassifTask(data = datos_tr[-2], target = "diagnosis") 
+lrn_knn = makeLearner("classif.knn", predict.type = "response",par.vals = list("k" = 2)) 
+mod_knn = mlr::train(lrn_knn, task)
+# Predicción TEST
+pred_knn= predict(mod_knn, newdata = datos_te[-2])
+acc_knn <- round(measureACC(as.data.frame(pred_knn)$truth, as.data.frame(pred_knn)$response),3)
+# ···························································································
+# Predicción TRAIN (naive)
+pred_knn_ = predict(mod_knn, newdata = datos_tr[-2]) # por si quiero ver naive sobre training
+acc_knn_ <- round(measureACC(as.data.frame(pred_knn_)$truth, as.data.frame(pred_knn_)$response),3)
+# ···························································································
+# Cambio los k 
+acc=NULL
+acc2=NULL
+ks = seq(1,100,1)
+for (i in 1:length(ks)) {
+        lrn_knn = makeLearner("classif.knn", predict.type = "response",par.vals = list("k" = i)) 
+        mod_knn = mlr::train(lrn_knn, task)
+        pred_knn= predict(mod_knn, newdata = datos_te[-2])
+        acc[i] = measureACC(as.data.frame(pred_knn)$truth, as.data.frame(pred_knn)$response)
+        pred_knn_ = predict(mod_knn, newdata = datos_tr[-2]) # por si quiero ver naive sobre training
+        acc2[i] = measureACC(as.data.frame(pred_knn_)$truth, as.data.frame(pred_knn_)$response)
+        
+}
+        
+par(mfcol = c(1,2))
+
+new_df1 <- as.data.frame(cbind(ks,acc))
+new_df1 <- new_df1%>%mutate(sub_data='test')
+new_df2 <- as.data.frame(cbind(ks,acc2))
+colnames(new_df2) <- c('ks','acc')
+new_df2 <- new_df2%>%mutate(sub_data='train')
+
+new_df <- as.data.frame(rbind(new_df1,new_df2))
+
+#new_df1[which.max(new_df1$acc),"threshold"] 
+#new_df2[which.max(new_df2$acc),"threshold"] 
+# ···························································································
+# Gráfico de cómo varía la métrica de performance accuracy, de acuerdo al umbral elegido
+ggplot(new_df, aes(x=ks, y=acc)) + geom_line(aes(color = sub_data,linetype=sub_data)) +
+        theme +labs(x='Umbral', y='Métrica de performance (accuracy)', 
+                     title= 'Evaluación del modelo de KNN') +
+        scale_color_manual(values = c("red", "darkred"),labels=c('prueba','entrenamiento')) +
+        scale_linetype_manual(values=c(1,2), labels=c('prueba','entrenamiento')) + 
+        labs(color='Conjunto de\n evaluación',linetype='Conjunto de\n evaluación')
+
+# ················ Métricas del modelo de knn ················
+Métrica <- c('valor','datos')
+Accuracy <- c(acc_knn,'prueba')
+Accuracy. <- c(acc_knn_,'entrenamiento')
+# Imprimo resultados de métricas de performance
+kable(rbind(Métrica, Accuracy, Accuracy.))
+
+
+lrn_knn = makeLearner("classif.knn", predict.type = "response",par.vals = list("k" = 9)) 
+plotLearnerPrediction(lrn_knn,task,features=c("REG1B","LYVE1"),cv=100L,gridsize=100)+scale_fill_manual(values=c("#ff0061","#11a6fc"))+theme_bw() 
+
+```
+
+
+------
+
+<br>
+<br>
+<br>
+
+
+
+*COMPARACIÓN DE MÉTODOS DE CLASIFICACIÓN SUPERVISADA*
+```{r METRICAS a}
+# todos los test
+logreg_metrics <- calculateROCMeasures(pred_lr)
+SVM_metrics1 <- calculateROCMeasures(pred_svm1)
+SVM_metrics2 <- calculateROCMeasures(pred_svm2)
+SVM_metrics3 <- calculateROCMeasures(pred_svm3)
+
+# Ingenua para ver cómo le va 
+pred_todos=NULL
+pred_todos_lg <- as.data.frame(predict(mod_lr, newdata = datos_escalados[-2]))
+pred_todos_svm1 <- as.data.frame(predict(mod_svm1, newdata = datos_escalados[-2]))
+pred_todos_svm2 <- as.data.frame(predict(mod_svm2, newdata = datos_escalados[-2]))
+pred_todos_svm3 <- as.data.frame(predict(mod_svm3, newdata = datos_escalados[-2]))
+
+# ······················ PCA datos originales ··················································
+ggbiplot(datos.pc, obs.scale=0.1 ,var.scale=1,alpha=0.5,groups=factor(data$diagnosis)) +
+        scale_color_manual(name="Diagnóstico", values=c('royalblue2','#ff7474ff'),
+                           labels=c("normal","maligno")) +
+        theme + labs(x='PC1 (51.5% explicado)', y= 'PC2 (22.5% explicado)',
+        title= 'Representación de las etiquetas reales\nen las componentes principales 1 y 2')+
+        theme(legend.position=c(.865,.15))
+# ······················ PCA + predicciones LG ··················································
+ggbiplot(datos.pc, obs.scale=0.1 ,var.scale=1,alpha=.5,groups=factor(pred_todos_lg$response)) +
+        scale_color_manual(name="Predicción", values=c('royalblue2','#ff7474ff'),
+                           labels=c("normal","maligno")) +
+        theme + labs(x='PC1 (51.5% explicado)', y= 'PC2 (22.5% explicado)',
+        title= 'Representación de las predicciones ingenuas del modelo LG\nen las componentes principales 1 y 2') +
+        theme(legend.position=c(.865,.15))
+# ······················ PCA + predicciones SVM radial (modelo 3) ·······························
+ggbiplot(datos.pc, obs.scale=0.1 ,var.scale=1,alpha=.5,groups=factor(pred_todos_svm3$response)) +
+        scale_color_manual(name="Predicción", values=c('royalblue2','#ff7474ff'),
+                           labels=c("normal","maligno")) +
+        theme + labs(x='PC1 (51.5% explicado)', y= 'PC2 (22.5% explicado)',                                   title= 'Representación de las predicciones ingenuas del modelo SVM (r)\nen las componentes principales 1 y 2') +
+        theme(legend.position=c(.865,.15))
+
+```
+
+```{r todos ROC}
+# ······················ curvas ROC para todos los modelos ········································
+df_todos = generateThreshVsPerfData(list(lg=pred_lr, 
+                                         svm1 = pred_svm1,
+                                         svm2 = pred_svm2,
+                                         svm3 = pred_svm3), measures = list(fpr, tpr, mmce))
+
+plotROCCurves(df_todos) + theme + 
+        labs(title='Curvas ROC de modelos de clasificación supervisada (datos de prueba)',
+             x='Tasa de falsos positivos (FPR)', y='Tasa de positivos verdaderos (TPR)', 
+             color=' Modelo en\n evaluación') +
+        scale_color_manual(values = c("red", "black", "blue", "darkgreen"),
+                           labels=c('reg log','SVM (l)','SVM (s)','SVM (r)'))+
+        theme(legend.position=c(0.915,0.25))
+# ············ valores AUC para todos los modelos cuando se consideran todas las variables ···················
+AUC_values <- rbind(AUC_lg_te, AUC_svm1_te,AUC_svm2_te,AUC_svm3_te)
+AUC_values <- as.data.frame(AUC_values)
+AUC_values$Modelo <- c('reg log','SVM (l)','SVM (s)','SVM (r)')
+colnames(AUC_values) <- c('Area debajo de la curva (AUC)','Modelo')
+row.names(AUC_values) <- NULL
+AUC_values <- AUC_values%>%dplyr::select(2,1)
+# Imprimo resultados
+kable(AUC_values)
+```
+
+Esta clasificación puede evaluarse con distintas combinaciones de variables!! 
+
+
+
