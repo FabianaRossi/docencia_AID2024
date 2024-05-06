@@ -25,7 +25,7 @@ Las pruebas paramétricas hacen inferencias poderosas sobre la población basada
 - Un test z es para exactamente 1 o 2 grupos cuando la muestra es grande.
 - Un test ANOVA es para 3 o más grupos (clase 9).
 
-Las pruebas z y t tienen subtipos basados en el número y tipos de muestras y las hipótesis:
+Las pruebas z y t tienen subtipos basados en el tipo de muestra y las hipótesis asociadas:
 
 Si tenemos mediciones emparejadas (diseño dentro de sujetos), se usa un test de muestras dependientes (pareadas).
 Si tenemos mediciones completamente separadas de dos grupos no emparejados (diseño entre sujetos), se usa un test de muestras independientes (no pareadas).
@@ -43,7 +43,7 @@ La elección del método a utilizar dependerá del tamaño de la muestra, los ti
 Entre los métodos no paramétricos están:
 
 - Test de medianas
-- Test de Mann-Whitney U
+- Test de Mann-Whitney 
 - Test de Wilcoxon de rangos con signo
 - Test de la suma de rangos de Wilcoxon
 - Test de Kolmogorov-Smirnov (no la vamos a ver en esta clase).
@@ -127,7 +127,7 @@ leveneTest(weight ~ smoke, data = births2)
 
 Ho:$\mu_{fum} - \mu_{no fum} = 0$  
 
-Ha:$\mu_{fum} - \mu_{no fum} \neq 0$ 
+H1:$\mu_{fum} - \mu_{no fum} \neq 0$ 
 
 <br/>
 
@@ -146,7 +146,7 @@ z.test(data_f,data_nf, mu=0, alternative= "two.sided", sigma.x=sd_f, sigma.y=sd_
 
 - Muestras aleatorias e independientes
 - Muestras con distribución normal
-- Muestras con n <30 
+- Muestras con n <= 30 
 - Varianzas poblacionales desconocidas 
 
 <br/>
@@ -187,7 +187,7 @@ shapiro.test(subset(sleep, group ==2)$extra) # No rechazo
 
 Ho:$\mu_{tt} - \mu_{ct} = 0$  
 
-Ha:$\mu_{tt} - \mu_{ct} > 0$ (tratamiento con somníferos aumenta el tiempo de sueño)
+H1:$\mu_{tt} - \mu_{ct} > 0$ (tratamiento con somníferos aumenta el tiempo de sueño)
 
 <br/>
 
@@ -210,7 +210,7 @@ Vuelvo a las Hipotesis de problema:
 
 Ho:$\mu_{ct} - \mu_{tt} = 0$ 
 
-Ha:$\mu_{ct} - \mu_{tt} < 0$
+H1:$\mu_{ct} - \mu_{tt} < 0$
 
 <br/>
 
@@ -272,7 +272,7 @@ d= diferencia (peso después - peso antes)
 
 Ho $\mu_d = 0$
 
-Ha $\mu_d > 0$
+H1 $\mu_d > 0$
 
 ```{r dif2}
 mice2 <-mice2 %>% mutate(diferencia= after-before)
@@ -357,7 +357,7 @@ Hipótesis
 
 Ho $\theta_A = \theta_C$
 
-Ha $\theta_A \neq \theta_C$
+H1 $\theta_A \neq \theta_C$
 
 <br/>
 
@@ -374,7 +374,7 @@ wilcox.test(Arbequina, Carolea, alternative = "two.sided")
 <br/>
 
 - **Test estadístico**
-```{r}
+```{r mod}
 mood.medtest(Rendimiento~L1, data=df)# Realiza el test de la mediana de Mood
 ```
 
