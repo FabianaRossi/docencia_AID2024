@@ -1,0 +1,959 @@
+---
+title: "Ejemplo de clustering (no supervisado)"
+author: "Práctico AID 2024 - Fabiana"
+output:
+  html_document:
+    toc: yes
+    toc_float: yes
+    df_print: paged
+---
+
+paper original del cuál se tomaron los datos: Debernardi S. et al. *A combination of urinary biomarker panel and PancRISK score for earlier detection of pancreatic cancer: A case-control study.* **PLoS Med. 2020, 17, e1003489, doi: 10.1371/journal.pmed.1003489.**
+
+# Preparación de los datos
+### Carga de datos y librerías
+*Cargo librerías*
+```{r libraries, warning=F, message=F}
+library(mlr)
+library(xlsx)
+library(dplyr)
+library(ggplot2)
+# install_github("vqv/ggbiplot")
+library(ggbiplot)
+library(GGally)
+library(pracma)
+library(cluster)
+library(gridExtra)
+library(cowplot)
+# remotes::install_github("coolbutuseless/ggpattern")
+library(ggpattern)
+library(ggpubr)
+library(scatterplot3d)  
+library(car)
+library(knitr)
+# install.packages("dendextend")
+library(dendextend)
+library(googlesheets)
+library(tidyr)
+```
+
+*Creo tema general para los gráficos*
+
+El siguiente chunck tiene código totalmente opcional, que se utiliza para darle formato a los gráficos. A lo largo del html se llama a esta variable varias veces, tal que haya homogeneidad de estilo de los gráficos.
+
+```{r theme}
+theme <- theme(text = element_text(size=10),
+               plot.title = element_text(size=12, face="bold.italic",
+               hjust = 0.5),
+               axis.title.x = element_text(size=10, face="bold", colour='black'),
+               axis.title.y = element_text(size=10, face="bold"),
+               panel.border = element_blank(),
+               panel.grid.major = element_blank(),
+               panel.grid.minor = element_blank(), 
+               legend.title = element_text(face="bold"))
+```
+
+*Cargo datos* 
+
+Se toman los datos de un google drive.
+
+Se trata de una base de datos del paper citado anteriormente, en el que se miden distintos marcadores urinarios a pacientes que tienen o no una patología.
+
+```{r data} 
+id <- '1b92r3ZoMmlnSJQtyl9Gv8ueRTefSnsGU' # id del archivo en google drive
+data <- read.csv(sprintf("https://docs.google.com/uc?id=%s&export=download", id))
+```
+
+### Preprocesamiento de la base de datos
+
+```{r procesamiento}
+# Cambio el nombre de las variables a español
+colnames(data) <- c('id','cohorte','origen','edad','sexo','diagnosis','estadio','diagnosis_benigno','plasma_CA19_9','creatinina','LYVE1','REG1B','TFF1','REG1A')
+# La variable "diagnóstico" tiene 3 valores posibles: 1, 2, 3, en donde 1= normal, 2= tumoral benigno, 3= maligno.
+# Elijo los datos con diagnóstico 1 y 3, y renombro los valores de la variable "diagnóstico" --> 1=normal, 3=maligno (Sólo con fines didácticos. Podría tranquilamente hacer el análisis con 3 niveles de la variable)
+data <- data %>% filter(diagnosis=='1' | diagnosis=='3')
+data <- data %>% mutate(diagnosis = sub("1", "normal", diagnosis))
+data <- data %>% mutate(diagnosis = sub("3", "maligno", diagnosis))
+# Transformo las variables sexo y diagnóstico como factor
+data$sexo <- as.factor(data$sexo)
+# indico los niveles de la variable diagnóstico, para que aparezcan en los gráficos del modo especificado y no en orden alfabético (el default de R)
+data$diagnosis <- factor(data$diagnosis, levels= c('normal','maligno'))
+# Me fijo cuántos NAs hay en cada variable
+kable(colSums(is.na(data)))
+# Me quedo sólo con columnas: edad, sexo, diagnosis, creatinina, LYVE1, REG1B,TFF1 y las reordeno (sin NAs)
+data <- data %>% dplyr::select(6,5,4,10:13) 
+# Imprimo tabla
+kable(data.frame(variable = names(data),
+           class = sapply(data, class),
+           primeros_valores = sapply(data, function(x) paste0(head(x),  collapse = ", ")),
+           row.names = NULL))
+```
+
+<br/>
+<br/>
+<br/>
+
+# Análisis 
+### EDA exploratorio
+
+*EDA de las variables y correlaciones de acuerdo al valor de la variable diagnóstico (gráficos)*
+
+```{r AnálisisExploratorio}
+# Gráfico ggpairs
+data%>% ggpairs(.,mapping=ggplot2::aes(color = diagnosis,alpha = 0.1),
+        upper = list(continuous = wrap("cor", size = 2.5),discrete = "blank", combo="blank"),
+        lower = list(combo = "box"),progress = F)+
+        theme+
+        labs(title= 'Descripción de variables en la base de datos', x='Variable', y='Variable')+
+        scale_fill_manual(values=c('royalblue2','red'))+
+        scale_color_manual(values=c('royalblue2','#ff7474ff'))
+```
+
+*EDA univariado, agrupadas por diagnóstico y sexo*
+
+```{r AnálisisExploratorio 2}
+# gráficos para cada una de las variables por separado, de acuerdo al diagnóstico y sexo
+# ················ EDAD ········································································
+g1 <- ggplot(data = data, aes(x = diagnosis, fill = diagnosis, pattern = sexo, y= edad)) + 
+        theme +
+        geom_boxplot_pattern(position = position_dodge(preserve = "single"),
+                         color = "black", pattern_fill = "black",
+                         pattern_angle = 45,pattern_density = 0.1,
+                         pattern_spacing = 0.025, pattern_key_scale_factor = 0.6, 
+                         outlier.shape =  1, outlier.colour = 'darkgray') + 
+        scale_fill_manual(values = c('royalblue2','#ff7474ff')) +
+        scale_pattern_manual(values = c(F = "none", M = "stripe")) +
+        labs(title='EDAD') +
+        theme(legend.position = 'blank', axis.title.x=element_blank(),
+              axis.title.y=element_blank(),text = element_text(size=10),
+              plot.title = element_text(size=10, face='plain', hjust = 0.5)) +
+        guides(pattern = guide_legend(override.aes = list(fill = "white")),
+               fill = guide_legend(override.aes = list(pattern = "none")))
+# ················ CREATININA ·································································
+g2 <- ggplot(data = data, aes(x = diagnosis, fill = diagnosis, pattern = sexo, y= creatinina)) +
+        theme +
+        geom_boxplot_pattern(position = position_dodge(preserve = "single"),
+                             color = "black", pattern_fill = "black",
+                             pattern_angle = 45,pattern_density = 0.1,
+                             pattern_spacing = 0.025, pattern_key_scale_factor = 0.6,
+                             outlier.shape =  1, outlier.colour = 'darkgray') + 
+        scale_fill_manual(values = c('royalblue2','#ff7474ff')) +
+        scale_pattern_manual(values = c(F = "none", M = "stripe")) +
+        labs(title='CREATININA') +
+        theme(legend.position = 'blank', axis.title.x=element_blank(),
+              axis.title.y=element_blank(),text = element_text(size=10),
+              plot.title = element_text(size=10, face='plain', hjust = 0.5)) +
+        guides(pattern = guide_legend(override.aes = list(fill = "white")),
+               fill = guide_legend(override.aes = list(pattern = "none")))
+# ················ LYVE1 ······································································
+g3 <- ggplot(data = data, aes(x = diagnosis, fill = diagnosis, pattern = sexo, y= LYVE1)) +
+        theme +
+        geom_boxplot_pattern(position = position_dodge(preserve = "single"),
+                             color = "black", pattern_fill = "black",
+                             pattern_angle = 45, pattern_density = 0.1,
+                             pattern_spacing = 0.025, pattern_key_scale_factor = 0.6,
+                             outlier.shape =  1, outlier.colour = 'darkgray') + 
+        scale_fill_manual(values = c('royalblue2','#ff7474ff')) +
+        scale_pattern_manual(values = c(F = "none", M = "stripe")) +
+        labs(title='LYVE1')+
+        theme(legend.position = 'blank', axis.title.x=element_blank(),
+              axis.title.y=element_blank(),text = element_text(size=10),
+              plot.title = element_text(size=10, face='plain', hjust = 0.5)) +
+        guides(pattern = guide_legend(override.aes = list(fill = "white")),
+               fill = guide_legend(override.aes = list(pattern = "none")))
+# ················ REG1B ···································································
+g4 <- ggplot(data = data, aes(x = diagnosis, fill = diagnosis, pattern = sexo, y= REG1B)) +
+        theme +
+        geom_boxplot_pattern(position = position_dodge(preserve = "single"),
+                             color = "black", pattern_fill = "black",
+                             pattern_angle = 45,pattern_density = 0.1,
+                             pattern_spacing = 0.025,pattern_key_scale_factor = 0.6,
+                             outlier.shape =  1, outlier.colour = 'darkgray') + 
+        scale_fill_manual(values = c('royalblue2','#ff7474ff')) +
+        scale_pattern_manual(values = c(F = "none", M = "stripe")) +
+        labs(title='REG1B') +
+        theme(legend.position = 'blank', axis.title.x=element_blank(),
+              axis.title.y=element_blank(),text = element_text(size=10),
+              plot.title = element_text(size=10, face='plain',hjust = 0.5)) +
+        guides(pattern = guide_legend(override.aes = list(fill = "white")),
+               fill = guide_legend(override.aes = list(pattern = "none")))
+# ················ TFF1 ·································································
+g5 <- ggplot(data = data, aes(x = diagnosis, fill = diagnosis, pattern = sexo, y= TFF1)) + 
+        theme +
+        geom_boxplot_pattern(position = position_dodge(preserve = "single"),
+                             color = "black", pattern_fill = "black",
+                             pattern_angle = 45,pattern_density = 0.1,
+                             pattern_spacing = 0.025,pattern_key_scale_factor = 0.6,
+                             outlier.shape =  1, outlier.colour = 'darkgray') + 
+        scale_fill_manual(values = c('royalblue2','#ff7474ff')) +
+        scale_pattern_manual(values = c(F = "none", M = "stripe")) +
+        labs(title='TFF1', fill='Diagnóstico', pattern='Sexo') +
+        theme(legend.position = c(1.8,0.5), axis.title.x=element_blank(),
+              axis.title.y=element_blank(),text = element_text(size=10),
+              plot.title = element_text(size=10, face='plain',hjust = 0.5)) +
+        guides(pattern = guide_legend(override.aes = list(fill = "white")),
+               fill = guide_legend(override.aes = list(pattern = "none")))
+# ············ JUNTO TODOS LOS GRAFICOS ···············································
+title1=text_grob(label='Análisis exploratorio de las variables', size = 14, face = "bold.italic")
+titlex=text_grob(label='Variable', size = 12, face = "bold")   
+
+grid.arrange(g1, g2, g3, g4, g5, top = title1, bottom=titlex, ncol=3)
+```
+
+*Reducción del espacio de representación de los datos mediante Análisis de Componentes Principales (PCA)*
+
+Este paso es meramente exploratorio y de visualización en un espacio de menores dimensiones.
+
+```{r PCA}
+# Preparo los datos para análisis de componentes principales
+datos_para_acp = data[c(3:7)] # todas las variables numéricas
+datos.pc = prcomp(datos_para_acp,scale = TRUE) #escalo los datos
+#grafico
+ggbiplot(datos.pc, obs.scale=0.1 ,var.scale=1,alpha=0.5,
+         groups=factor(data$diagnosis)) +
+        scale_color_manual(name="diagnosis",values=c('royalblue2','#ff7474ff'),
+                           labels=c("normal",'maligno')) +
+        theme + labs(title='Análisis de componentes principales') + 
+        theme(legend.position=c(.85,.15)) 
+```
+
+<br/>
+<br/>
+<br/>
+
+# Métodos de clasificación
+
+## *NO SUPERVISADOS (clustering)*
+
+### * *k-means*
+
+<span style="color:blue"> El algoritmo K-means es un método de agrupamiento no supervisado ampliamente utilizado en análisis de datos. Su objetivo es dividir un conjunto de datos en k grupos o clusters, donde cada grupo contiene datos similares entre sí y diferentes a los datos en otros grupos. El proceso comienza seleccionando k centroides iniciales de forma aleatoria (*uno tiene que decidir, con algún criterio, cuál es el k más conveniente*). Luego, cada punto de datos se asigna al centroide más cercano utilizando una métrica de distancia, generalmente la distancia euclídea. Posteriormente, los centroides se recalculan como la media de los puntos asignados a cada cluster. Este proceso de asignación y actualización de centroides se repite iterativamente hasta que los centroides convergen o las asignaciones de los puntos dejan de cambiar significativamente.</span>
+
+*Cómo funciona (gráficamente y para k=3)*
+```{r gif, fig.cap="clustering k-means"}
+knitr::include_graphics("/Users/FR/Documents/Burocrático/DOCENCIA/MATERIAS/8_AID/2024/kmeans.gif")
+```
+
+_Elección del número de clusters_
+
+Es necesario definir un número de clústers en los que yo quiero agrupar los datos. Si tengo conocimiento previo de alguna distribución particular de las observaciones, entonces puedo usar ese valor. Si no conozco en cuántos grupos intrínsecos se segmentan los datos (si lo hacen), tengo que realizar pruebas midiendo alguna métrica que indique coherencia / error al asignar los puntos a un determinado número de clústers.
+
+<br/>
+
+Entre las métricas que se pueden medir, está el SSE o Silhouette. A continuación se presenta una función que itera sobre distintos número de k y calcula estas dos métricas. Al graficar los resultados, uno debería encontrar (idealmente), un número de k óptimo.
+
+<br/>
+Para hacer la prueba para distintos números de clústers (k), se define una función que recibe la data (datA_exc), el número máximo de clústers que se quieren probar (kmax) y la función a calcular (f).
+
+Esta función se definió como *metrica* (cada vez que se llame a "metrica", hará el cálculo de sse y silhouette)
+Puede calcular para k-means o k-medoids (no lo vimos en clase, pero básicamente es un método más robusto --> ojo que tarda MUCHO. La función se llama *pam*).
+
+```{r CLUSTERING euclidea estandarizada}
+datos_para_cluster = data[3:7]
+#analisis de la cantidad de clusters. Este primer bloque es solo para definir funciones.
+#se define una funcion para calcular metricas que orientan sobre el numero de clusters a elegir para el problema.
+
+metrica = function(datA_esc,kmax,f) {
+        sil = array()
+        sse = array()
+        datA_dist= dist(datA_esc,method = "euclidean", diag = FALSE, upper = FALSE, p = 2)
+        for ( i in  2:kmax) { if (strcmp(f,"kmeans")==TRUE) {   #centroide: tipico kmeans
+                        CL  = kmeans(datA_esc,centers=i,nstart=50,iter.max = kmax)
+                        sse[i]  = CL$tot.withinss 
+                        CL_sil = silhouette(CL$cluster, datA_dist)
+                        sil[i]  = summary(CL_sil)$avg.width}
+                if (strcmp(f,"pam")==TRUE){       #medoide: ojo porque este metodo tarda muchisimo 
+                        CL = pam(x=datA_esc, k=i, diss = F, metric = "euclidean")
+                        sse[i]  = CL$objective[1] 
+                        sil[i]  = CL$silinfo$avg.width}}
+        sse
+        sil
+        return(data.frame(sse,sil))}
+
+#en este bloque se estudia cuantos clusters convendría generar segun indicadores tipicos -> por ejemplo el "Silhouette"
+kmax = 10
+
+m1   = metrica(scale(datos_para_cluster),kmax,"kmeans")  #tipica con estimadores de la normal
+m1 <- m1[complete.cases(m1),]
+m1$kcluster <- seq(2,kmax,1)
+m1 <- m1%>%dplyr::select(3,1,2)
+m1_sse <- m1%>%dplyr::select(-3)%>%mutate(metric='SSE')
+colnames(m1_sse) <- c('kcluster','value','metric')
+m1_sil <- m1%>%dplyr::select(-2)%>%mutate(metric='SIL')
+colnames(m1_sil) <- c('kcluster','value','metric')
+m1 <- rbind(m1_sse,m1_sil)
+
+# Grafico de métricas SIL y SSE
+ggplot(m1, aes(kcluster, value, linetype=metric)) + geom_line(col='red') + 
+        facet_wrap(~metric, ncol=1, scales='free')+theme+geom_point(col='red', size=2, fill='pink', shape=21)+
+        labs(title='Determinación de número de clusters', 
+             x='k Número de clusters', y='Valor', linetype='Métrica')+
+        scale_x_continuous(breaks = seq(1, kmax, by = 1))+
+        scale_linetype_manual(values=c(1,2))
+```
+
+COMO NO PARECE SÚPER CLARO CUÁNTOS K CONVIENE, SE PRUEBAN DISTINTAS ALTERNATIVAS. LUEGO (DADO QUE UNO A PRIORI NO TIENE ETIQUETAS, TENDRÍA QUE TOMAR ALGÚN CRITERIO PARA DECIDIR CON CUÁNTOS K SE QUEDA... COSAS QUE AYUDAN A DECIDIR: SI HAY CONOCIMIENTO PREVIO DE ALGÚN TIPO DE AGRUPAMIENTO INTRÍNSECO DE LOS DATOS, SI EL RESULTADO DE PCA ME DIÓ ALGÚN INDICIO, ETC)
+
+_k-MEANS con *k=2*_
+
+Primero hago una prueba con k=2 y datos escalados (fc scale).
+
+Para analizar qué tan bueno resultó el clustering (y dado que en este caso tengo las etiquetas de diagnóstico), me fijo cómo le fue al modelo con estas variables numéricas que utilicé. Grafico en 3 dimensiones (3 de las variables originales), cómo era la distribución real de etiquetas y cómo es la distribución de clústers según k means.
+
+Como un análisis en 3D es limitado respecto la base de datos original, que tenía más variables, también lo puedo representar en un espacio de menor dimensionalidad (PCA).
+
+```{r kmeans 2} 
+set.seed(1)
+cantidad_clusters=2
+
+CL  = kmeans(scale(datos_para_cluster),cantidad_clusters)
+data$kmeans = CL$cluster
+
+# Grafico scatterplot original + cluster con k=2
+par(mfrow=c(1,2))
+# -------------------------------------------------------------------------------------------
+col1 <- c('royalblue2','#ff7474ff')
+col1 <- col1[as.numeric(data$diagnosis)]
+
+scatterplot3d(data$edad,data$REG1B,data$LYVE1, color = alpha(col1,0.3), box=F,angle=45, pch = 19, grid = TRUE, tick.marks = FALSE, xlab = "edad", ylab = "REG1B", zlab = "LYVE1", main='Realidad')
+legend("topright", bty = "n", cex = .9, title = "Diagnóstico", c("normal", "maligno"), fill = c('royalblue2','#ff7474ff'))
+# -------------------------------------------------------------------------------------------
+colors <- c('orange','#a25da2a5')
+colors <- colors[as.numeric(data$kmeans)]
+
+scatterplot3d(data$edad,data$REG1B,data$LYVE1, color = alpha(colors,0.3), box=F,angle=45, pch = 19, grid = TRUE, tick.marks = FALSE, xlab = "edad", ylab = "REG1B", zlab = "LYVE1", main='Clustering')
+legend("topright", bty = "n", cex = .9, title = "Grupo k-means", c("1", "2"), fill = c('orange','#a25da2a5'))
+
+#conviene en un biplot ya que tengo las flechas de las variables originales
+# GRAFICO ORIGINAL
+ggbiplot(datos.pc, obs.scale=0.1 ,var.scale=1,alpha=0.5,
+         groups=factor(data$diagnosis)) +
+        scale_color_manual(name="diagnosis",values=c('royalblue2','#ff7474ff'),
+                           labels=c("normal",'maligno')) +
+        theme + labs(title='Análisis de componentes principales') + 
+        theme(legend.position=c(.85,.15)) + 
+        labs(x='PC1 (51.5% explicado)', y= 'PC2 (22.5% explicado)')
+# -------------------------------------------------------------------------------------------
+# GRAFICO KMEANS
+ggbiplot(datos.pc, obs.scale=0.1 ,var.scale=1, alpha=0.5,groups = as.factor(data$kmeans) )+
+        scale_color_manual(name="Grupo k-means", values=c("orange",'#a25da2a5',"darkgreen"),
+                           labels=c("1", "2","3")) + theme+
+        labs(x='PC1 (51.5% explicado)', y= 'PC2 (22.5% explicado)',
+             title= 'Representación del clustering utilizando k-means')+theme(legend.position=c(.85,.15)) 
+
+# ·····················································
+# cuántos pacientes de cada diagnóstico están en cada cluster:
+pacientes_cluster1 <- data %>% filter (kmeans == '1')
+cluster1 <- table(pacientes_cluster1$diagnosis)
+porcentaje_cluster.1 <- round(prop.table(cluster1)*100,2)
+pacientes_cluster2 <- data %>% filter (kmeans == '2')
+cluster2 <- table(pacientes_cluster2$diagnosis)
+porcentaje_cluster.2 <- round(prop.table(cluster2)*100,2)
+# ·····················································
+# Imprimo resultados
+kable(cbind(rbind(cluster1,cluster2),rbind(porcentaje_cluster.1,porcentaje_cluster.2)))
+```
+
+_k-MEANS con *k=2*_ 
+Calculo medias de cada variable en cada diagnóstico (etiqueta real) y lo comparo con las medias de cada variable en cada uno de los clusters definidos. Sirve para evaluar cómo le fue al clústering.
+
+*RECORDAR QUE NORMALMENTE UNO NO SUELE TENER TODAS LAS ETIQUETAS REALES.... CUANDO SE APLICAN MÉTODOS NO SUPERVISADOS, A PRIORI UNO NO CONOCE SI LOS DATOS SE AGRUPAN (EN TÉRMINOS GENERALES).*
+
+```{r kmeans 2 calculos} 
+kmeans1 <- data %>% filter(kmeans==1)  %>%dplyr::select(c(3:7))%>% colMeans()
+kmeans2 <- data %>% filter(kmeans==2)  %>%dplyr::select(c(3:7))%>% colMeans()
+normal <- data %>%filter(diagnosis=='normal') %>%dplyr::select(c(3:7))%>% colMeans()
+maligno <- data %>%filter(diagnosis=='maligno') %>%dplyr::select(c(3:7))%>% colMeans()
+# Imprimo resultados
+kable(rbind(kmeans1,normal,kmeans2,maligno))
+```
+
+_k-MEANS con *k=2* sin escalar_
+```{r kmeans 2 sin escalar} 
+cantidad_clusters=2
+set.seed(1)
+CL  = kmeans(datos_para_cluster,cantidad_clusters)
+data$kmeans = CL$cluster
+
+par(mfrow=c(1,2))
+# -------------------------------------------------------------------------------------------
+# GRAFICO ORIGINAL
+col1 <- c('royalblue2','#ff7474ff')
+col1 <- col1[as.numeric(data$diagnosis)]
+
+scatterplot3d(data$edad,data$REG1B,data$LYVE1, color = alpha(col1,0.3), box=F,angle=45, pch = 19, grid = TRUE, tick.marks = FALSE, xlab = "edad", ylab = "REG1B", zlab = "LYVE1", main='Realidad')
+legend("topright", bty = "n", cex = .9, title = "Diagnóstico", c("normal", "maligno"), fill = c('royalblue2','#ff7474ff'))
+# -------------------------------------------------------------------------------------------
+# GRAFICO CLUSTERS
+colors <- c('orange','#a25da2a5')
+colors <- colors[as.numeric(data$kmeans)]
+
+scatterplot3d(data$edad,data$REG1B,data$LYVE1, color = alpha(colors,0.3), box=F,angle=45, pch = 19, grid = TRUE, tick.marks = FALSE, xlab = "edad", ylab = "REG1B", zlab = "LYVE1", main='Clustering')
+legend("topright", bty = "n", cex = .9, title = "Grupo k-means", c("1", "2"), fill = c('orange','#a25da2a5'))
+# -------------------------------------------------------------------------------------------
+#conviene en un biplot ya que tengo las flechas de las variables originales
+# GRAFICO CLUSTER EN PCA 1 Y 2
+ggbiplot(datos.pc, obs.scale=.1 ,var.scale=1, alpha=0.5,groups = as.factor(data$kmeans) )+
+        scale_color_manual(name="Grupo k-means", values=c("orange",'#a25da2a5',"darkgreen"),
+                           labels=c("1", "2","3")) + theme+
+        labs(x='PC1 (51.5% explicado)', y= 'PC2 (22.5% explicado)',
+             title= 'Representación del clustering utilizando k-means')+theme(legend.position=c(.865,.2)) + 
+        scale_x_continuous(breaks = seq(-2.5, 7.5, by = 2.5))
+# ·····················································
+# cuántos pacientes de cada diagnóstico están en cada cluster:
+pacientes_cluster1 <- data %>% filter (kmeans == '1')
+cluster1 <- table(pacientes_cluster1$diagnosis)
+porcentaje_cluster.1 <- round(prop.table(cluster1)*100,2)
+pacientes_cluster2 <- data %>% filter (kmeans == '2')
+cluster2 <- table(pacientes_cluster2$diagnosis)
+porcentaje_cluster.2 <- round(prop.table(cluster2)*100,2)
+# ·····················································
+# Imprimo resultados
+kable(cbind(rbind(cluster1,cluster2),rbind(porcentaje_cluster.1,porcentaje_cluster.2)))
+```
+
+_k-MEANS con *k=3*_ 
+
+Ahora hago una prueba con k= 3. Vuelvo a representar los datos en 3D o en las primeras dos componentes de PCA, y hago un análisis de vectores de posición (medias) de las variables originales según las etiquetas reales, o la nueva asignación de clústers.
+
+```{r kmeans 3}
+
+cantidad_clusters=2
+set.seed(1)
+CL  = kmeans(scale(datos_para_cluster),cantidad_clusters)
+data$kmeans = CL$cluster
+par(mar=c(0, .5, 5.5, 0.5),mfrow=c(1,3))
+# -------------------------------------------------------------------------------------------
+# GRAFICO ORIGINAL
+col1 <- c('royalblue2','#ff7474ff')
+col1 <- col1[as.numeric(data$diagnosis)]
+
+scatterplot3d(data$edad,data$REG1B,data$LYVE1, color = alpha(col1,0.3), box=F,angle=25, pch = 19, grid = TRUE, tick.marks = FALSE, xlab = "edad", ylab = "REG1B", zlab = "LYVE1", main='Realidad', cex.lab=.8,scale.y=2, cex.symbols=1.3)
+legend(x=4, y=5.5, bty = "n", cex =1.1, title = "Diagnóstico", c("normal", "maligno"), fill = c('royalblue2','#ff7474ff'))
+# -------------------------------------------------------------------------------------------
+# GRAFICO K=2
+colors <- c('orange','#a25da2a5')
+colors <- colors[as.numeric(data$kmeans)]
+
+scatterplot3d(data$edad,data$REG1B,data$LYVE1, color = alpha(colors,0.3), box=F,angle=25, pch = 19, grid = TRUE, tick.marks = FALSE, xlab = "edad", ylab = "REG1B", zlab = "LYVE1", main='Clustering k=2', cex.lab=.8,scale.y=2, cex.symbols=1.3)
+legend(x=4, y=5.5,  bty = "n", cex = 1.1, title = "Grupo k-means", c("1", "2"), fill = c('orange','#a25da2a5'))
+# -------------------------------------------------------------------------------------------
+# ENTRENO K MEANS CON K=3
+cantidad_clusters=3
+set.seed(1)
+CL  = kmeans(scale(datos_para_cluster),cantidad_clusters)
+data$kmeans = CL$cluster
+colors2 <- c('orange','#a25da2a5', 'darkgreen')
+colors2 <- colors2[as.numeric(data$kmeans)]
+# -------------------------------------------------------------------------------------------
+# GRAFICO K=3
+scatterplot3d(data$edad,data$REG1B,data$LYVE1, color = alpha(colors2,0.3), box=F,angle=25, pch = 19, grid = TRUE, tick.marks = FALSE, xlab = "edad", ylab = "REG1B", zlab = "LYVE1", main='Clustering k=3', cex.lab=.8,scale.y=2, cex.symbols=1.3)
+legend(x=4, y=5.5, bty = "n", cex = 1.1, title = "Grupo k-means", c("1", "2","3"), fill = c('orange','#a25da2a5','darkgreen'))
+# -------------------------------------------------------------------------------------------
+# GRAFICOS K MEANS EN ACP COORD
+ggbiplot(datos.pc, obs.scale=0.1 ,var.scale=1,alpha=0.5,
+         groups=factor(data$diagnosis)) +
+        scale_color_manual(name="diagnosis",values=c('royalblue2','#ff7474ff'),
+                           labels=c("normal",'maligno')) +
+        theme + labs(title='Análisis de componentes principales') + 
+        theme(legend.position=c(.85,.15)) + 
+        labs(x='PC1 (51.5% explicado)', y= 'PC2 (22.5% explicado)')
+
+ggbiplot(datos.pc, obs.scale=0.1 ,var.scale=1, alpha=0.5,groups = as.factor(data$kmeans) )+
+        scale_color_manual(name="Grupo k-means", values=c("orange",'#a25da2a5',"darkgreen"),
+                           labels=c("1", "2","3")) + theme+
+        labs(x='PC1 (51.5% explicado)', y= 'PC2 (22.5% explicado)',
+             title= 'Representación del clustering utilizando k-means')+theme(legend.position=c(.85,.15))
+# ·····················································
+# cuántos pacientes de cada diagnóstico están en cada cluster:
+pacientes_cluster1 <- data %>% filter (kmeans == '1')
+cluster1 <- table(pacientes_cluster1$diagnosis)
+porcentaje_cluster.1 <- round(prop.table(cluster1)*100,2)
+# ·····················································
+pacientes_cluster2 <- data %>% filter (kmeans == '2')
+cluster2 <- table(pacientes_cluster2$diagnosis)
+porcentaje_cluster.2 <- round(prop.table(cluster2)*100,2)
+# ·····················································
+pacientes_cluster3 <- data %>% filter (kmeans == '3')
+cluster3 <- table(pacientes_cluster3$diagnosis)
+porcentaje_cluster.3 <- round(prop.table(cluster3)*100,2)
+# ·····················································
+# Imprimo resultados
+kable(cbind(rbind(cluster1,cluster2,cluster3),rbind(porcentaje_cluster.1,porcentaje_cluster.2,porcentaje_cluster.3)))
+```
+
+
+_k-MEANS con *k=2* sin REG1B ni creatinina (variable), estandarizado_
+
+Pruebo eligiendo otras variables (nada/nadie dice cuáles hay que usar! Prueben alternativas)
+
+Vuelvo a representar gráficamente los resultados según etiquetas reales sobre un espacio de 3 variables o sobre las dos primeras componentes de un PCA, así como también según los clústers definidos por el algoritmo de kmeans con K=3.
+
+```{r kmeans 2 sin REG1B ni creatinina} 
+set.seed(1234)
+cantidad_clusters=2
+datos_para_cluster = data[c(3,5,7)]
+CL  = kmeans(scale(datos_para_cluster),cantidad_clusters)
+data$kmeans = CL$cluster
+par(mfrow=c(1,2))
+# -------------------------------------------------------------------------------------------
+# GRAFICO K=2 original
+col1 <- c('royalblue2','#ff7474ff')
+col1 <- col1[as.numeric(data$diagnosis)]
+
+scatterplot3d(data$edad,data$TFF1,data$LYVE1, color = alpha(col1,0.3), box=F,angle=45, pch = 19, grid = TRUE, tick.marks = FALSE, xlab = "edad", ylab = "TFF1", zlab = "LYVE1", main='Realidad')
+legend("topright", bty = "n", cex = .9, title = "Diagnóstico", c("normal", "maligno"), fill = c('royalblue2','#ff7474ff'))
+
+colors <- c('orange','#a25da2a5')
+colors <- colors[as.numeric(data$kmeans)]
+# -------------------------------------------------------------------------------------------
+# GRAFICO K=2 sin creatinina ni REG1B (clusteres)
+scatterplot3d(data$edad,data$TFF1,data$LYVE1, color = alpha(colors,0.3), box=F,angle=45, pch = 19, grid = TRUE, tick.marks = FALSE, xlab = "edad", ylab = "TFF1", zlab = "LYVE1", main='Clustering')
+legend("topright", bty = "n", cex = .9, title = "Grupo k-means", c("1", "2"), fill = c('orange','#a25da2a5'))
+# -------------------------------------------------------------------------------------------
+# GRAFICO kmeans con k=2 sin variables, en coord ACP
+#conviene en un biplot ya que tengo las flechas de las variables originales
+ggbiplot(datos.pc, obs.scale=.01 ,var.scale=1, alpha=0.5,groups = as.factor(data$kmeans) )+
+        scale_color_manual(name="Grupo k-means", values=c("orange",'#a25da2a5',"darkgreen"),
+                           labels=c("1", "2","3")) + theme+
+        labs(x='PC1 (51.5% explicado)', y= 'PC2 (22.5% explicado)',
+             title= 'Representación del clustering utilizando k-means')+theme(legend.position=c(.865,.2)) 
+# ·····················································
+# cuántos pacientes de cada diagnóstico están en cada cluster:
+pacientes_cluster1 <- data %>% filter (kmeans == '1')
+cluster1 <- table(pacientes_cluster1$diagnosis)
+porcentaje_cluster.1 <- round(prop.table(cluster1)*100,2)
+pacientes_cluster2 <- data %>% filter (kmeans == '2')
+cluster2 <- table(pacientes_cluster2$diagnosis)
+porcentaje_cluster.2 <- round(prop.table(cluster2)*100,2)
+# ·····················································
+# Imprimo resultados
+kable(cbind(rbind(cluster1,cluster2),rbind(porcentaje_cluster.1,porcentaje_cluster.2)))
+```
+
+_k-MEANS con *k=2* sin REG1B ni creatinina (variable), estandarizado_
+
+Calculo de distribución de cada variable en los datos de acuerdo al diagnóstico o el cluster
+
+```{r kmeans 2 sin REG1B ni creatinina análisis de medias de todas las variables} 
+comp_media1 <- data %>% gather(-c(1,2,4,6,8), key = "var", value = "value") %>%
+        ggplot(aes(x = as.factor(diagnosis), y = value)) +theme(plot.margin = unit(c(2.0,0.4,0,.7), "cm"))+
+        geom_boxplot(aes(fill=diagnosis, alpha=0.6), outlier.colour='gray', outlier.shape=1, outlier.size=1) +
+        facet_wrap(~ var, scales = "free") +theme(legend.position='none')+
+        theme+labs(x="Diagnóstico", y= NULL)+scale_fill_manual(values=c('royalblue2','#ff7474ff'))
+
+data$kmeans <- factor(data$kmeans, levels= c(1,2))
+comp_media2 <-data %>% gather(-c(1,2,4,6,8), key = "var", value = "value") %>%
+        ggplot(aes(x = as.factor(kmeans), y = value)) +theme(plot.margin = unit(c(0.5,0.4,0,.7), "cm"))+
+        geom_boxplot(aes(fill=kmeans, alpha=0.6), outlier.colour='gray', outlier.shape=1, outlier.size=1) +
+        facet_wrap(~ var, scales = "free") +theme(legend.position='none')+
+        theme+labs(x="Cluster", y= NULL)+scale_fill_manual(values=c('orange','#a25da2a5'))
+
+plot_grid(comp_media1, comp_media2, nrow = 2,rel_heights = c(1, .8))+
+    annotate("text", x=.5, y=.9, size=4, label='atop(bold("Comparación de variables"),"según diagnóstico y cluster")', parse=TRUE)+
+        annotate("text", angle=90,x=0.02, y=.5, size=4, label='bold("Valor estandarizado de la variable")', parse=TRUE)
+
+```
+
+<br/>
+
+Y de todas estas opciones, qué elijo?? Si hay etiquetas previas (al menos parcialmente), la que mejor represente los grupos originales. Si no tengo esta info, entonces elijo la que mejor resultados de SSE/Silhouette me de, o la que se ajuste a conocimiento previo de agrupamiento intrínseco de los datos (aunque no tenga etiquetas, si yo sé que existen 4 grupos aprox, entonces eligiré k=4).
+
+Recordar que uno además podría separar en 4 grupos (por ejemplo: A, B, C, D),... y después decidir colapsar 2 de ellos en un nuevo grupo, o sólo analizar A, B y C, descartando D.
+
+Por otro lado, consideren que entre distintas corridas (aún con semilla fija), los nombres que k-means asigna a los grupos pueden no ser los mismos.
+
+<br/>
+<br/>
+<br/>
+
+### * Clustering jerárquico
+_Tomo una muestra balanceada (para diagnóstico) de tamaño n=100 [**porque es muy costoso computacionalmente**]_
+
+<span style="color:blue"> El clustering jerárquico es un método de agrupamiento que construye una jerarquía de clusters en forma de árbol o dendrograma. Existen dos enfoques principales: el aglomerativo (de abajo hacia arriba) y el divisivo (de arriba hacia abajo). En el método aglomerativo, cada punto de datos comienza como un cluster individual. En cada paso, los dos clusters más similares se fusionan, basándose en una medida de distancia como la distancia euclídea, la distancia de Manhattan, o la distancia de Mahalanobis, hasta que todos los puntos se agrupan en un solo cluster. El método divisivo, en cambio, empieza con todos los puntos en un único cluster y divide recursivamente los clusters hasta que cada punto está en su propio cluster. También puede utilizarse la distancia de Gower para datos que son numéricos + categóricos. </span>
+
+<br/>
+
+Cálculo de matriz de distancias (input del clústering, que puede utilizar distintos tipos de distancias!)
+
+A continuación se representan distintos tipos de distancias (existen más...)
+
+![-](/Users/FR/Documents/Burocrático/DOCENCIA/MATERIAS/8_AID/2024/distancias.png)
+
+Una vez que calculamos las distancias de todos versus todos (es decir, para cada observación respecto las restantes), tenemos que definir de qué modo vamos a medir distancias entre grupos o clusters formados.
+
+Existen distintas alternativas para calcular este tipo de distancias:
+
+![-](/Users/FR/Documents/Burocrático/DOCENCIA/MATERIAS/8_AID/2024/jerarquico.png)
+
+_Euclidea_
+```{r sample 100 y calculo distancias euclideas}
+# Elijo un subset de 100 datos para realizar el dendograma
+cantidad_clusters=2
+set.seed(1407)
+par(mfcol = c(1,1))
+data_c_diag = data[-c(2,8)] # sin sexo ni kmeans columns
+sample_cluster1 <- data_c_diag[sample(1:nrow(data_c_diag), 100,replace=FALSE),]
+sample_cluster <- as.data.frame(scale(sample_cluster1[,2:6]))
+sample_cluster$diagnosis <- sample_cluster1$diagnosis
+sample_cluster <- sample_cluster%>%dplyr::select(6,1:5)
+# Imprimo cuántos valores hay en cada categoría de la variable diagnóstico en mi muestra de n=100
+kable(table(sample_cluster$diagnosis))
+# Escalo los datos y hago PCA
+datos.pc2 = prcomp(sample_cluster[-1],scale = TRUE)
+# Matriz de distancias euclídeas 
+mat_dist <- dist(x = sample_cluster[-1], method = "euclidean") 
+# Dendrogramas (según el tipo de segmentación jerárquica aplicada)  
+hc_complete <- hclust(d = mat_dist, method = "complete") 
+hc_average  <- hclust(d = mat_dist, method = "average")
+hc_single   <- hclust(d = mat_dist, method = "single")
+hc_ward     <- hclust(d = mat_dist, method = "ward.D2")
+#calculo del coeficiente de correlacion cofenetico
+completo <- round(cor(x = mat_dist, cophenetic(hc_complete)),3)
+promedio <- round(cor(x = mat_dist, cophenetic(hc_average)),3)
+simple <- round(cor(x = mat_dist, cophenetic(hc_single)),3)
+ward <- round(cor(x = mat_dist, cophenetic(hc_ward)),3)
+valores_coef <- cbind(completo,promedio,simple,ward)
+# Imprimo valores de coeficiente cofenético
+kable(valores_coef)
+``` 
+
+_Manhattan_
+```{r sample 100 y calculo distancias manhattan}
+# mismo subset
+cantidad_clusters=2
+set.seed(1407)
+par(mfcol = c(1,1))
+data_c_diag = data[-c(2,8)] # sin sexo ni kmeans columns
+sample_cluster1 <- data_c_diag[sample(1:nrow(data_c_diag), 100,replace=FALSE),]
+sample_cluster <- as.data.frame(scale(sample_cluster1[,2:6]))
+sample_cluster$diagnosis <- sample_cluster1$diagnosis
+sample_cluster <- sample_cluster%>%dplyr::select(6,1:5)
+# Escalo datos y hago PCA
+datos.pc2 = prcomp(sample_cluster[-1],scale = TRUE)
+# Matriz de distancias manhattan 
+mat_dist <- dist(x = sample_cluster[-1], method = "manhattan") 
+# Dendrogramas (según el tipo de segmentación jerárquica aplicada)  
+hc_complete <- hclust(d = mat_dist, method = "complete") 
+hc_average  <- hclust(d = mat_dist, method = "average")
+hc_single   <- hclust(d = mat_dist, method = "single")
+hc_ward     <- hclust(d = mat_dist, method = "ward.D2")
+#calculo del coeficiente de correlacion cofenetico
+completo <- round(cor(x = mat_dist, cophenetic(hc_complete)),3)
+promedio <- round(cor(x = mat_dist, cophenetic(hc_average)),3)
+simple <- round(cor(x = mat_dist, cophenetic(hc_single)),3)
+ward <- round(cor(x = mat_dist, cophenetic(hc_ward)),3)
+valores_coef <- cbind(completo,promedio,simple,ward)
+# Imprimo valores de coeficiente cofenético
+kable(valores_coef)
+```
+
+_clustering jerárquico con k= 2_
+```{r vals_a_df_2}
+# Armo clusters
+jer_ward<-cutree(hc_ward,k=cantidad_clusters)           
+jer_average<-cutree(hc_average,k=cantidad_clusters)      
+jer_complete<-cutree(hc_complete,k=cantidad_clusters)           
+jer_single<-cutree(hc_single,k=cantidad_clusters)     
+# Agrego cluster a dataframe
+sample_cluster$jer_ward=jer_ward
+sample_cluster$jer_average=jer_average
+sample_cluster$jer_complete=jer_complete
+sample_cluster$jer_single=jer_single
+```
+
+
+* Construcción de dendograma con distancia Ward
+```{r dendogramas k2-1}
+# construccion de dendograma WARD
+mar = c(5.1, 4.1, 4.1, 2.1) 
+pch=c('royalblue2','#ff7474ff') 
+cols=alpha(pch[sample_cluster$diagnosis[order.dendrogram(as.dendrogram(hc_ward))]],0.7)
+dend_ward <- color_branches(as.dendrogram(hc_ward), k = 2)
+dend_ward <- set(dend_ward, "labels_cex", 0.1)
+grafico1 <- dend_ward %>%  set("leaves_pch",19)%>%
+        set("leaves_cex", .9) %>% set("leaves_col", cols) %>% 
+        plot(main = "Dendrograma jerárquico", ylab='Distancia',cex.lab=1, cex.axis=.6)+
+        mtext(side = 3, line = 0.5, at = 1, adj = -1.8, 'Distancia Ward')+
+        mtext(side = 1, line = 0.5, at = 1, adj = -4.1, 'Paciente')
+legend(5,28, title='Diagnóstico', 
+     legend = c("normal" , "maligno"), 
+     col = c('royalblue2','#ff7474ff') , 
+     pch = c(19,19), bty = "n",  pt.cex = 1.5, cex = 0.8 , 
+     text.col = "black", horiz = FALSE, inset = c(0, 0.1))
+```
+
+* Construcción de dendograma con distancia promedio
+```{r dendogramas k2-2}
+cols_a=alpha(pch[sample_cluster$diagnosis[order.dendrogram(as.dendrogram(hc_average))]],0.7)
+dend_average <- color_branches(as.dendrogram(hc_average), k = 2)
+dend_average <- set(dend_average, "labels_cex", 0.1)
+grafico2 <- dend_average %>% set("leaves_pch",19) %>%  
+        set("leaves_cex", .8) %>%  set("leaves_col", cols_a) %>% 
+        plot(main = "Dendrograma jerárquico",  ylab='Distancia',cex.lab=1, cex.axis=.6)+
+        mtext(side = 3, line = 0.5, at = 1, adj = -1.3, 'Distancia Promedio')+
+        mtext(side = 1, line = 0.5, at = 1, adj = -4.1, 'Paciente')
+legend(76,8, title='Diagnóstico', 
+     legend = c("normal" , "maligno"), 
+     col = c('royalblue2','#ff7474ff') , 
+     pch = c(19,19), bty = "n",  pt.cex = 1.5, cex = 0.8 , 
+     text.col = "black", horiz = FALSE, inset = c(0, 0.1))
+```
+
+* Construcción de dendograma con distancia completa
+```{r dendogramas k2-3}
+cols_c=alpha(pch[sample_cluster$diagnosis[order.dendrogram(as.dendrogram(hc_complete))]],0.7)
+dend_complete <- color_branches(as.dendrogram(hc_complete), k = 2)
+dend_complete <- set(dend_complete, "labels_cex", 0.1)
+grafico3 <- dend_complete %>% set("leaves_pch",19) %>%  # node point type
+        set("leaves_cex", .8) %>%  # node point size
+        set("leaves_col", cols_c) %>% #node point color
+        plot(main = "Dendrograma jerárquico", ylab='Distancia',cex.lab=1, cex.axis=.6)+
+        mtext(side = 3, line = 0.5, at = 1, adj = -1.3, 'Distancia Completa')+
+        mtext(side = 1, line = 0.5, at = 1, adj = -4.1, 'Paciente')
+legend(85,16, title='Diagnóstico', 
+     legend = c("normal" , "maligno"), 
+     col = c('royalblue2','#ff7474ff') , 
+     pch = c(19,19), bty = "n",  pt.cex = 1.5, cex = 0.8 , 
+     text.col = "black", horiz = FALSE, inset = c(0, 0.1))
+```
+
+* Construcción de dendograma con distancia simple
+```{r dendogramas k2-4}
+cols_s=alpha(pch[sample_cluster$diagnosis[order.dendrogram(as.dendrogram(hc_single))]],0.7)
+dend_single <- color_branches(as.dendrogram(hc_single), k = 2)
+dend_single <- set(dend_single, "labels_cex", 0.1)
+grafico4 <- dend_single %>% set("leaves_pch",19) %>%  # node point type
+        set("leaves_cex", .8) %>%  # node point size
+        set("leaves_col", cols_s) %>% #node point color
+        plot(main = "Dendrograma jerárquico", ylab='Distancia',cex.lab=1, cex.axis=.7)+
+        mtext(side = 3, line = 0.5, at = 1, adj = -1.7, 'Distancia Simple')+
+        mtext(side = 1, line = 0.5, at = 1, adj = -4.1, 'Paciente')
+legend(80,7, title='Diagnóstico', 
+     legend = c("normal" , "maligno"), 
+     col = c('royalblue2','#ff7474ff') , 
+     pch = c(19,19), bty = "n",  pt.cex = 1.5, cex = 0.8 , 
+     text.col = "black", horiz = FALSE, inset = c(0, 0.1))
+```
+
+Cálculo de cuántos pacientes de cada diagnóstico hay en cada cluster según las distintas distancias utilizadas
+* Ward
+```{r ward2}
+# ·····················································
+# cuántos pacientes de cada diagnóstico están en cada cluster:
+ward_cluster1 <- sample_cluster %>% filter (jer_ward == '1')
+cluster1 <- table(ward_cluster1$diagnosis)
+Ward_cluster.1 <- round(prop.table(cluster1)*100,2)
+# ·····················································
+ward_cluster2 <- sample_cluster %>% filter (jer_ward == '2')
+cluster2 <- table(ward_cluster2$diagnosis)
+Ward_cluster.2 <- round(prop.table(cluster2)*100,2)
+
+kable(cbind(rbind(cluster1,cluster2),rbind(Ward_cluster.1,Ward_cluster.2)))
+```
+* Promedio
+```{r prom2}
+# ·····················································
+promedio_cluster1 <- sample_cluster %>% filter (jer_average == '1')
+cluster1 <- table(promedio_cluster1$diagnosis)
+promedio_cluster.1 <- round(prop.table(cluster1)*100,2)
+# ·····················································
+promedio_cluster2 <- sample_cluster %>% filter (jer_average == '2')
+cluster2 <- table(promedio_cluster2$diagnosis)
+promedio_cluster.2 <- round(prop.table(cluster2)*100,2)
+
+kable(cbind(rbind(cluster1,cluster2),rbind(promedio_cluster.1,promedio_cluster.2)))
+```
+* Completo
+```{r comple2}
+# ·····················································
+completo_cluster1 <- sample_cluster %>% filter (jer_complete == '1')
+cluster1 <- table(completo_cluster1$diagnosis)
+completo_cluster.1 <- round(prop.table(cluster1)*100,2)
+# ·····················································
+completo_cluster2 <- sample_cluster %>% filter (jer_complete == '2')
+cluster2 <- table(completo_cluster2$diagnosis)
+completo_cluster.2 <- round(prop.table(cluster2)*100,2)
+
+kable(cbind(rbind(cluster1,cluster2),rbind(completo_cluster.1,completo_cluster.2)))
+```
+* Simple
+```{r simple2}
+# ·····················································
+simple_cluster1 <- sample_cluster %>% filter (jer_single == '1')
+cluster1 <- table(simple_cluster1$diagnosis)
+simple_cluster.1 <- round(prop.table(cluster1)*100,2)
+# ·····················································
+simple_cluster2 <- sample_cluster %>% filter (jer_single == '2')
+cluster2 <- table(simple_cluster2$diagnosis)
+simple_cluster.2 <- round(prop.table(cluster2)*100,2)
+
+
+kable(cbind(rbind(cluster1,cluster2),rbind(simple_cluster.1,simple_cluster.2)))
+```
+
+
+_clustering jerárquico con k= 3_
+```{r vasl_a_df3}
+# Armo clusters
+cantidad_clusters=3
+
+jer_ward3<-cutree(hc_ward,k=cantidad_clusters)           
+jer_average3<-cutree(hc_average,k=cantidad_clusters)           
+jer_complete3<-cutree(hc_complete,k=cantidad_clusters)           
+jer_single3<-cutree(hc_single,k=cantidad_clusters)       
+# Agrego clusters al dataframe
+sample_cluster$jer_ward3=jer_ward3
+sample_cluster$jer_average3=jer_average3
+sample_cluster$jer_complete3=jer_complete3
+sample_cluster$jer_single3=jer_single3
+```
+
+Construcción de dendograma con distancia Ward
+```{r dendogramas k3_w3}
+mar = c(5.1, 4.1, 4.1, 2.1) 
+cols_w=alpha(pch[sample_cluster$diagnosis[order.dendrogram(as.dendrogram(hc_ward))]],0.7)
+dend_ward <- color_branches(as.dendrogram(hc_ward), k = 3)
+dend_ward <- set(dend_ward, "labels_cex", 0.1)
+grafico5 <- dend_ward %>% set("leaves_pch",19) %>%  # node point type
+        set("leaves_cex", .8) %>%  # node point size
+        set("leaves_col", cols_w) %>% #node point color
+        plot(main = "Dendrograma jerárquico", ylab='Distancia',cex.lab=1, cex.axis=.6)+
+        mtext(side = 3, line = 0.5, at = 1, adj = -1.8, 'Distancia Ward')+
+        mtext(side = 1, line = 0.5, at = 1, adj = -4.1, 'Paciente')
+legend(3,32, title='Diagnóstico', 
+     legend = c("normal" , "maligno"), 
+     col = c('royalblue2','#ff7474ff') , 
+     pch = c(19,19), bty = "n",  pt.cex = 1.5, cex = 0.8 , 
+     text.col = "black", horiz = FALSE, inset = c(0, 0.1))
+```
+
+Construcción de dendograma con distancia Promedio
+```{r dendogramas k3_a3}
+dend_average <- color_branches(as.dendrogram(hc_average), k = 3)
+dend_average <- set(dend_average, "labels_cex", 0.1)
+grafico6 <- dend_average %>% set("leaves_pch",19) %>%  # node point type
+        set("leaves_cex", .8) %>%  # node point size
+        set("leaves_col", cols_a) %>% #node point color
+        plot(main = "Dendrograma jerárquico",  ylab='Distancia',cex.lab=1, cex.axis=.6)+
+        mtext(side = 3, line = 0.5, at = 1, adj = -1.4, 'Distancia Promedio')+
+        mtext(side = 1, line = 0.5, at = 1, adj = -4.1, 'Paciente')
+legend(90,12.2, title='Diagnóstico', 
+     legend = c("normal" , "maligno"), 
+     col = c('royalblue2','#ff7474ff') , 
+     pch = c(19,19), bty = "n",  pt.cex = 1.5, cex = 0.8 , 
+     text.col = "black", horiz = FALSE, inset = c(0, 0.1))
+```
+
+Construcción de dendograma con distancia Completa
+```{r dendogramas k3_c3}
+dend_complete <- color_branches(as.dendrogram(hc_complete), k = 3)
+dend_complete <- set(dend_complete, "labels_cex", 0.1)
+grafico7 <- dend_complete %>% set("leaves_pch",19) %>%  # node point type
+        set("leaves_cex", .8) %>%  # node point size
+        set("leaves_col", cols_c) %>% #node point color
+        plot(main = "Dendrograma jerárquico", ylab='Distancia',cex.lab=1, cex.axis=.6)+
+        mtext(side = 3, line = 0.5, at = 1, adj = -1.4, 'Distancia Completa')+
+        mtext(side = 1, line = 0.5, at = 1, adj = -4.1, 'Paciente')
+legend(85,18, title='Diagnóstico', 
+     legend = c("normal" , "maligno"), 
+     col = c('royalblue2','#ff7474ff') , 
+     pch = c(19,19), bty = "n",  pt.cex = 1.5, cex = 0.8 , 
+     text.col = "black", horiz = FALSE, inset = c(0, 0.1))
+```
+
+Construcción de dendograma con distancia Simple
+```{r dendogramas k3_s3}
+dend_single <- color_branches(as.dendrogram(hc_single), k = 3)
+dend_single <- set(dend_single, "labels_cex", 0.1)
+grafico8 <- dend_single %>% set("leaves_pch",19) %>%  # node point type
+        set("leaves_cex", .8) %>%  # node point size
+        set("leaves_col", cols_s) %>% #node point color
+        plot(main = "Dendrograma jerárquico", ylab='Distancia',cex.lab=1, cex.axis=.7)+
+        mtext(side = 3, line = 0.5, at = 1, adj = -1.6, 'Distancia Simple')+
+        mtext(side = 1, line = 0.5, at = 1, adj = -4.1, 'Paciente')
+legend(80,7, title='Diagnóstico', 
+     legend = c("normal" , "maligno"), 
+     col = c('royalblue2','#ff7474ff') , 
+     pch = c(19,19), bty = "n",  pt.cex = 1.5, cex = 0.8 , 
+     text.col = "black", horiz = FALSE, inset = c(0, 0.1))
+```
+
+Cálculo de cuántos pacientes de cada diagnóstico hay en cada cluster según las distintas distancias utilizadas
+Ward
+```{r ward k3}
+ward_cluster1 <- sample_cluster %>% filter (jer_ward3 == '1')
+cluster1 <- table(ward_cluster1$diagnosis)
+Ward_cluster.1 <- round(prop.table(cluster1)*100,2)
+# ·····················································
+ward_cluster2 <- sample_cluster %>% filter (jer_ward3 == '2')
+cluster2 <- table(ward_cluster2$diagnosis)
+Ward_cluster.2 <- round(prop.table(cluster2)*100,2)
+# ·····················································
+ward_cluster3 <- sample_cluster %>% filter (jer_ward3 == '3')
+cluster3 <- table(ward_cluster3$diagnosis)
+Ward_cluster.3 <- round(prop.table(cluster3)*100,2)
+
+kable(cbind(rbind(cluster1,cluster2,cluster3),rbind(Ward_cluster.1,Ward_cluster.2,Ward_cluster.3)))
+```
+Promedio
+```{r promedio k3}
+promedio_cluster1 <- sample_cluster %>% filter (jer_average3 == '1')
+cluster1 <- table(promedio_cluster1$diagnosis)
+promedio_cluster.1 <- round(prop.table(cluster1)*100,2)
+# ·····················································
+promedio_cluster2 <- sample_cluster %>% filter (jer_average3 == '2')
+cluster2 <- table(promedio_cluster2$diagnosis)
+promedio_cluster.2 <- round(prop.table(cluster2)*100,2)
+# ·····················································
+promedio_cluster3 <- sample_cluster %>% filter (jer_average3 == '3')
+cluster3 <- table(promedio_cluster3$diagnosis)
+promedio_cluster.3 <- round(prop.table(cluster3)*100,2)
+# ·····················································
+
+kable(cbind(rbind(cluster1,cluster2,cluster3),rbind(promedio_cluster.1,promedio_cluster.2,promedio_cluster.3)))
+```
+Completo
+```{r completo k3}
+completo_cluster1 <- sample_cluster %>% filter (jer_complete3 == '1')
+cluster1 <- table(completo_cluster1$diagnosis)
+completo_cluster.1 <- round(prop.table(cluster1)*100,2)
+# ·····················································
+completo_cluster2 <- sample_cluster %>% filter (jer_complete3 == '2')
+cluster2 <- table(completo_cluster2$diagnosis)
+completo_cluster.2 <- round(prop.table(cluster2)*100,2)
+# ·····················································
+completo_cluster3 <- sample_cluster %>% filter (jer_complete3 == '3')
+cluster3 <- table(completo_cluster3$diagnosis)
+completo_cluster.3 <- round(prop.table(cluster3)*100,2)
+
+kable(cbind(rbind(cluster1,cluster2,cluster3),rbind(completo_cluster.1,completo_cluster.2,completo_cluster.3)))
+```
+Simple
+```{r simple k3}
+simple_cluster1 <- sample_cluster %>% filter (jer_single3 == '1')
+cluster1 <- table(simple_cluster1$diagnosis)
+simple_cluster.1 <- round(prop.table(cluster1)*100,2)
+# ·····················································
+simple_cluster2 <- sample_cluster %>% filter (jer_single3 == '2')
+cluster2 <- table(simple_cluster2$diagnosis)
+simple_cluster.2 <- round(prop.table(cluster2)*100,2)
+# ·····················································
+simple_cluster3 <- sample_cluster %>% filter (jer_single3 == '3')
+cluster3 <- table(simple_cluster3$diagnosis)
+simple_cluster.3 <- round(prop.table(cluster3)*100,2)
+
+kable(cbind(rbind(cluster1,cluster2,cluster3),rbind(simple_cluster.1,simple_cluster.2,simple_cluster.3)))
+```
+
+Cómo sabemos qué distancia elegir para calcular la matriz de distancias??, qué estrategia utilizamos para medir distancia entre grupos?? --> DEPENDE.
+
+1- si tengo algún tipo de etiqueta (aunque no sea para todas las observaciones), me sirve para analizar qué estrategia se ajusta más a la distribución de etiquetas reales.
+
+2- si no tengo etiquetas reales, entonces me fijo si hay algún conocimiento previo de agrupamiento y/o proporción de grupos.
+
+3- si no conozco nada de eso, tengo que armar grupos y ver si algunas variables se distribuyen de manera particular en los grupos encontrados (analizar su distribución)
+
+4- tratar de NO elegir metodologías que encuentren grupos de observaciones únicas y luego otros grupos muy abundantes (ya que seguramente esté detectando outliers)
+
+5- si todas las opciones más o menos dan igual, y no conozco mucho de la estructura de los datos, elegir la distancia que mejor represente a la distancia original de los datos (es decir, mirar el coeficiente de correlación cofenético).
