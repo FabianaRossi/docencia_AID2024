@@ -19,7 +19,7 @@ En esta última clase se verán **métodos de clasificación supervisada**.
 
 Al comienzo de la materia, vimos técnicas que servían para analizar la relación de poca cantidad de variables. 
 
-En el caso de variables categóricas se presentaron los test de independencia y homogeneidad, así como también los análisis de correspondencia y reglas de asociación.
+En el caso de variables categóricas se presentaron los test de independencia y homogeneidad, así como también los análisis de correspondencia.
 
 En el caso de las variables numéricas, se presentaron test estadísticas paramétricos o no paramétricos (dependiendo si se asume que los datos siguen alguna distribución, o si se cumple que lo hacen) para comparar la distribución de una variable en 2 o más grupos.
 
