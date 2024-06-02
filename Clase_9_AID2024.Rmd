@@ -321,17 +321,24 @@ Test de **Kruskal Wallis**.
 
 El test de Kruskal-Wallis, también conocido como test H, es la alternativa no paramétrica al test ANOVA de una vía para datos no pareados. Se trata de una extensión del test de Mann-Whitney para más de dos grupos.
 
-En el test de Kruskal-Wallis se contrasta si las diferentes muestras están equidistribuidas y que por lo tanto pertenecen a una misma distribución (población). Bajo ciertas simplificaciones puede considerarse que el test de Kruskal-Wallis compara las medianas.
+En el test de Kruskal-Wallis se contrasta si las diferentes muestras están equidistribuidas y que por lo tanto pertenecen a una misma distribución (población). Bajo ciertas simplificaciones (_y en determinadas condiciones_) puede considerarse que el test de Kruskal-Wallis compara las medianas.
 
         - H0: todas las muestras provienen de la misma población (distribución).
 
         - HA: Al menos una muestra proviene de una población con una distribución distinta.
 <br/>   
-**Supuestos:**
+**Supuestos:** 
+
+
+En caso de querer sacar conclusiones acerca de las *medianas* de las distribuciones a comparar, entonces se debe cumplir que los datos en cada grupo tengan la misma forma y variabilidad. 
 
 - **Homocedasticidad**: dado que la hipótesis nula asume que todos los grupos pertenecen a una misma población y que por lo tanto tienen las mismas medianas, es requisito necesario que todos los grupos tengan la misma varianza. Se puede comprobar con representaciones gráficas o con los test de Levenne o Barttlet.
 
 - **Misma distribución** para todos los grupos: la distribución de los grupos no tiene que ser normal pero ha de ser igual en todos (por ejemplo que todos muestren asimetría hacia la derecha).
+
+<br/>   
+
+Si las poblaciones a comparar no tienen la misma forma / variabilidad, entonces el test Kruskal-Wallis se puede analizar para los rangos de las medias. [ver Tutorial SPSS](https://statistics.laerd.com/spss-tutorials/kruskal-wallis-h-test-using-spss-statistics.php)  
 
 
 <br/>
