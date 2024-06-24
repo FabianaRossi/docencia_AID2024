@@ -877,7 +877,7 @@ new_df <- as.data.frame(rbind(new_df1,new_df2))
 # ···························································································
 # Gráfico de cómo varía la métrica de performance accuracy, de acuerdo al umbral elegido
 ggplot(new_df, aes(x=ks, y=acc)) + geom_line(aes(color = sub_data,linetype=sub_data)) +
-        theme +labs(x='Umbral', y='Métrica de performance (accuracy)', 
+        theme +labs(x='Cantidad de vecinos', y='Métrica de performance (accuracy)', 
                      title= 'Evaluación del modelo de KNN') +
         scale_color_manual(values = c("red", "darkred"),labels=c('prueba','entrenamiento')) +
         scale_linetype_manual(values=c(1,2), labels=c('prueba','entrenamiento')) + 
@@ -905,7 +905,10 @@ plotLearnerPrediction(lrn_knn,task,features=c("REG1B","LYVE1"),cv=100L,gridsize=
 
 
 
-*COMPARACIÓN DE MÉTODOS DE CLASIFICACIÓN SUPERVISADA*
+# Comparación de métodos de clasificación supervisada.
+
+Las comparaciones las voy a hacer con la métrica de AUC. Como knn no tiene threshold (sólo cuenta cuántos vecinos hay de cada etiqueta), no es posible calcular AUC.
+
 ```{r METRICAS a}
 # todos los test
 logreg_metrics <- calculateROCMeasures(pred_lr)
